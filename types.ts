@@ -4,7 +4,7 @@ export type CardWidth = number;
 export type PaddingSize = 'compact' | 'normal' | 'spacious';
 export type BackgroundType = 'transparent' | 'solid' | 'gradient';
 export type DmStyle = 'instagram' | 'whatsapp' | 'imessage';
-export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'fade-scale';
+export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'fade-scale' | 'elastic-spin' | 'flip-in';
 
 export interface BulkMessage {
   id: string;

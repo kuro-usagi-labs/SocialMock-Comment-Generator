@@ -57,10 +57,30 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
     const yOffset = interpolate(slideProgress, [0, 1], [50, 0]);
     transform = `translateY(${yOffset}px)`;
     opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  } else if (style === 'slide-down') {
+    const yOffset = interpolate(slideProgress, [0, 1], [-50, 0]);
+    transform = `translateY(${yOffset}px)`;
+    opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  } else if (style === 'slide-left') {
+    const xOffset = interpolate(slideProgress, [0, 1], [50, 0]);
+    transform = `translateX(${xOffset}px)`;
+    opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  } else if (style === 'slide-right') {
+    const xOffset = interpolate(slideProgress, [0, 1], [-50, 0]);
+    transform = `translateX(${xOffset}px)`;
+    opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
   } else if (style === 'fade-scale') {
     const scale = interpolate(frame, [0, 15], [0.95, 1], { extrapolateRight: 'clamp' });
     transform = `scale(${scale})`;
     opacity = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: 'clamp' });
+  } else if (style === 'elastic-spin') {
+    const rotate = interpolate(popProgress, [0, 1], [-180, 0]);
+    transform = `scale(${popProgress}) rotate(${rotate}deg)`;
+    opacity = interpolate(frame, [0, 5], [0, 1], { extrapolateRight: 'clamp' });
+  } else if (style === 'flip-in') {
+    const rotateX = interpolate(popProgress, [0, 1], [-90, 0]);
+    transform = `perspective(1000px) rotateX(${rotateX}deg)`;
+    opacity = interpolate(frame, [0, 5], [0, 1], { extrapolateRight: 'clamp' });
   }
 
   const renderCard = () => {

@@ -16,7 +16,12 @@ const animationOptions: Array<{ value: AnimationStyle; label: string }> = [
   { value: 'none', label: 'No Animation' },
   { value: 'pop', label: 'Pop In (Bouncy)' },
   { value: 'slide-up', label: 'Slide Up' },
+  { value: 'slide-down', label: 'Slide Down' },
+  { value: 'slide-left', label: 'Slide Left' },
+  { value: 'slide-right', label: 'Slide Right' },
   { value: 'fade-scale', label: 'Fade & Scale' },
+  { value: 'elastic-spin', label: 'Elastic Spin' },
+  { value: 'flip-in', label: 'Flip In' },
 ];
 
 export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, isExportingVideo, playerRef }) => {
@@ -41,7 +46,13 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
               {animationOptions.map(opt => (
                 <button
                   key={opt.value}
-                  onClick={() => update('animationStyle', opt.value)}
+                  onClick={() => {
+                    update('animationStyle', opt.value);
+                    if (playerRef.current) {
+                      playerRef.current.seekTo(0);
+                      playerRef.current.play();
+                    }
+                  }}
                   className={`flex items-center justify-between rounded-xl px-4 py-3 text-sm font-bold transition-all ${
                     config.animationStyle === opt.value
                       ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-500/30'
