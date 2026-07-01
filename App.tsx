@@ -10,7 +10,8 @@ import TikTokCard from './components/TikTokCard';
 import TwitterCard from './components/TwitterCard';
 import InstagramCard from './components/InstagramCard';
 import BubbleChatCard from './components/BubbleChatCard';
-import { PlayerRef } from '@remotion/player';
+import { PlayerRef, Thumbnail } from '@remotion/player';
+import { MainComposition } from './components/remotion/Composition';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { AnimationTab } from './components/AnimationTab';
@@ -41,6 +42,7 @@ const App: React.FC = () => {
   const [bulkExportIndex, setBulkExportIndex] = useState(-1);
   const [activeTab, setActiveTab] = useState<'canvas' | 'animation'>('canvas');
   const [isExportingVideo, setIsExportingVideo] = useState(false);
+  const [exportFrame, setExportFrame] = useState(0);
   
   const playerRef = useRef<PlayerRef>(null);
 
@@ -167,26 +169,19 @@ const App: React.FC = () => {
         toast.info('Preparing frames for MP4...');
         
         await window.electronAPI.startVideoExport();
-        
-        const player = playerRef.current;
-        player.pause();
-        
-        // Wait for player to settle
-        await new Promise(r => setTimeout(r, 500));
-
-        // Get the inner container to capture
-        const container = document.querySelector('.remotion-player-container div') as HTMLElement;
-        if (!container) throw new Error('Player container not found');
-
         const totalFrames = 120;
         
         for (let f = 0; f < totalFrames; f++) {
-          player.seekTo(f);
-          // Allow React and Remotion to re-render
-          await new Promise(r => setTimeout(r, 50));
+          setExportFrame(f);
           
+          // Allow React and Remotion to re-render the Thumbnail
+          await new Promise(r => setTimeout(r, 60));
+          
+          const container = document.getElementById('export-container');
+          if (!container) throw new Error('Export container not found');
+
           const dataUrl = await toPng(container, {
-            pixelRatio: 1, // 1080p is large enough
+            pixelRatio: 1, // Native 1080x1080
             cacheBust: true,
           });
           
@@ -497,6 +492,45 @@ const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Hidden high-res export container */}
+      {isExportingVideo && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden bg-slate-900">
+          <div className="relative z-10 flex flex-col items-center">
+            <Loader2 className="mb-4 animate-spin text-indigo-400" size={48} />
+            <h2 className="text-xl font-bold text-white">Rendering Video...</h2>
+            <p className="mt-2 text-slate-400">Frame {exportFrame + 1} of 120</p>
+            <div className="mt-6 h-2 w-64 overflow-hidden rounded-full bg-slate-800">
+              <div 
+                className="h-full bg-indigo-500 transition-all duration-75" 
+                style={{ width: `${((exportFrame + 1) / 120) * 100}%` }}
+              />
+            </div>
+          </div>
+          
+          {/* 
+            The actual 1080x1080 container for html-to-image. 
+            We place it offscreen visually using fixed positioning, but NOT display: none 
+            so html-to-image can still read its dimensions and content accurately.
+          */}
+          <div 
+            className="fixed" 
+            style={{ left: '-9999px', top: '-9999px', width: 1080, height: 1080 }}
+          >
+            <div id="export-container" style={{ width: 1080, height: 1080, backgroundColor: config.greenscreen ? '#00FF00' : 'transparent', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <Thumbnail
+                component={MainComposition}
+                compositionWidth={1080}
+                compositionHeight={1080}
+                frameToDisplay={exportFrame}
+                durationInFrames={120}
+                fps={60}
+                inputProps={{ config, message: undefined }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
