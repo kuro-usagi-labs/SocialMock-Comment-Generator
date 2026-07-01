@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { toPng, toBlob } from 'html-to-image';
-import { ChevronDown, Copy, Download, Loader2, MessageCircle, Minus, Moon, PackageCheck, Plus, RotateCcw, Sun } from 'lucide-react';
+import { ChevronDown, Copy, Download, Loader2, MessageCircle, Minus, PackageCheck, Plus, RotateCcw } from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaTiktok, FaXTwitter, FaYoutube } from 'react-icons/fa6';
+import { Toaster, toast } from 'sonner';
 import { INITIAL_CONFIG, CommentConfig, BulkMessage, Platform } from './types';
 import FacebookCard from './components/FacebookCard';
 import YouTubeCard from './components/YouTubeCard';
@@ -59,9 +60,10 @@ const App: React.FC = () => {
       link.download = `social-mock-${config.platform}-${Date.now()}.png`;
       link.href = dataUrl;
       link.click();
+      toast.success('Image exported successfully!');
     } catch (err) {
       console.error('Export failed', err);
-      alert('Failed to export image. Please try again.');
+      toast.error('Failed to export image. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -85,15 +87,15 @@ const App: React.FC = () => {
           await navigator.clipboard.write([
             new ClipboardItem({ 'image/png': blob })
           ]);
-          alert('Image copied to clipboard!');
+          toast.success('Image copied to clipboard!');
         } catch (err) {
           console.error('Clipboard write failed', err);
-          alert('Failed to copy image to clipboard.');
+          toast.error('Failed to copy image to clipboard.');
         }
       }
     } catch (err) {
       console.error('Copy failed', err);
-      alert('Failed to copy image. Please try again.');
+      toast.error('Failed to copy image. Please try again.');
     } finally {
       setIsCopying(false);
     }
@@ -141,9 +143,10 @@ const App: React.FC = () => {
 
         await new Promise(resolve => setTimeout(resolve, 200));
       }
+      toast.success('All messages exported successfully!');
     } catch (err) {
       console.error('Bulk export failed', err);
-      alert('Bulk export failed. Please try again.');
+      toast.error('Bulk export failed. Please try again.');
     } finally {
       setIsExportingBulk(false);
       setBulkExportIndex(-1);
@@ -182,6 +185,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden bg-[#f0f4f8] font-sans text-slate-950 md:flex-row">
+      <Toaster position="bottom-center" toastOptions={{ className: 'font-sans' }} />
       {/* Animated Mesh Gradient Background */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div className="animate-blob absolute left-[-10%] top-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-300/40 mix-blend-multiply blur-3xl"></div>

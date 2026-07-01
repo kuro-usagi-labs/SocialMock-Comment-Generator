@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { CommentConfig } from '../types';
 
 interface PreviewCanvasProps {
@@ -54,13 +55,24 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
               className="origin-top-left transition-transform duration-200"
               style={{ transform: `scale(${displayZoom})`, width: `${config.width}px` }}
             >
-            <div
-              id="export-container"
-              className={`p-8 rounded-[24px] ${getBackgroundClass()}`}
-              style={getBackgroundStyle()}
-            >
-              {children}
-            </div>
+              <div
+                id="export-container"
+                className={`p-8 rounded-[24px] flex justify-center ${getBackgroundClass()}`}
+                style={getBackgroundStyle()}
+              >
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={config.platform}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="w-full flex justify-center"
+                  >
+                    {children}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         </div>
