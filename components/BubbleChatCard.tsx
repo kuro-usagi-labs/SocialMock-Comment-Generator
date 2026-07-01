@@ -23,24 +23,21 @@ const WhatsappBubble: React.FC<{ config: CommentConfig; content: string; isDark:
         className={`relative max-w-[85%] sm:max-w-[75%] shadow-sm ${isMe ? bgMe : bgThem} ${isMe ? textMe : textThem}`}
         style={{ 
           borderRadius: '18px',
-          borderBottomRightRadius: isMe ? '0px' : '18px',
-          borderBottomLeftRadius: isMe ? '18px' : '0px',
+          borderBottomRightRadius: '18px',
+          borderBottomLeftRadius: '18px',
           padding: '8px 10px 8px 12px',
           fontSize: config.fontSize 
         }}
       >
         {/* Modern iOS WhatsApp Tail */}
         <svg 
-          viewBox="0 0 8 10" 
-          width="8" 
-          height="10" 
-          className={`absolute bottom-0 ${isMe ? '-right-[7px]' : '-left-[7px]'} ${isMe ? (isDark ? 'text-[#005c4b]' : 'text-[#d9fdd3]') : (isDark ? 'text-[#202c33]' : 'text-white')}`} 
-          style={{ fill: 'currentColor' }}
+          viewBox="0 0 16 16" 
+          width="16" 
+          height="16" 
+          className={`absolute bottom-0 ${isMe ? '-right-[6px]' : '-left-[6px]'} ${isMe ? (isDark ? 'text-[#005c4b]' : 'text-[#d9fdd3]') : (isDark ? 'text-[#202c33]' : 'text-white')} z-[-1]`} 
+          style={{ fill: 'currentColor', transform: !isMe ? 'scaleX(-1)' : 'none' }}
         >
-          {isMe 
-            ? <path d="M0 10H8C8 5 3 2 0 0V10Z" /> 
-            : <path d="M8 10H0C0 5 5 2 8 0V10Z" />
-          }
+          <path d="M0 16C3 16 5 14 7 12C7 14 10 16 16 16C12 16 8 14 8 10V0H0V16Z" />
         </svg>
 
         <p className="whitespace-pre-wrap break-words leading-[1.35] [overflow-wrap:anywhere] py-1">
@@ -99,9 +96,9 @@ const IMessageBubble: React.FC<{ config: CommentConfig; content: string; isDark:
       <div 
         className={`relative max-w-[75%] px-[14px] py-[8px] ${isMe ? bgMe : bgThem} ${isMe ? textMe : textThem}`}
         style={{ 
-          borderRadius: '20px',
-          borderBottomRightRadius: isMe ? '0px' : '20px',
-          borderBottomLeftRadius: isMe ? '20px' : '0px',
+          borderRadius: '18px',
+          borderBottomRightRadius: '18px',
+          borderBottomLeftRadius: '18px',
           fontSize: config.fontSize 
         }}
       >
@@ -111,16 +108,13 @@ const IMessageBubble: React.FC<{ config: CommentConfig; content: string; isDark:
         
         {/* Tail SVG */}
         <svg 
-          viewBox="0 0 10 14" 
-          width="10" 
-          height="14" 
-          className={`absolute bottom-0 ${isMe ? '-right-[9px]' : '-left-[9px]'} ${isMe ? (isDark ? 'text-[#0a84ff]' : 'text-[#007aff]') : (isDark ? 'text-[#3a3a3c]' : 'text-[#e9e9eb]')}`} 
-          style={{ fill: 'currentColor' }}
+          viewBox="0 0 20 20" 
+          width="20" 
+          height="20" 
+          className={`absolute bottom-[0px] ${isMe ? '-right-[8px]' : '-left-[8px]'} ${isMe ? (isDark ? 'text-[#0a84ff]' : 'text-[#007aff]') : (isDark ? 'text-[#3a3a3c]' : 'text-[#e9e9eb]')} z-[-1]`} 
+          style={{ fill: 'currentColor', transform: !isMe ? 'scaleX(-1)' : 'none' }}
         >
-          {isMe 
-            ? <path d="M0 14H10C10 7 4 3 0 0V14Z" /> 
-            : <path d="M10 14H0C0 7 6 3 10 0V14Z" />
-          }
+          <path d="M0 20C4 20 6.5 18 9 15C9 15 9 15 9.5 14.5C9.5 16.5 12.5 20 20 20C15 20 10 18 10 13V0H0V20Z" />
         </svg>
       </div>
     </div>
