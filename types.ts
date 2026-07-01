@@ -4,6 +4,7 @@ export type CardWidth = number;
 export type PaddingSize = 'compact' | 'normal' | 'spacious';
 export type BackgroundType = 'transparent' | 'solid' | 'gradient';
 export type DmStyle = 'instagram' | 'whatsapp' | 'imessage';
+export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'fade-scale';
 
 export interface BulkMessage {
   id: string;
@@ -38,6 +39,9 @@ export interface CommentConfig {
   dmStyle: DmStyle;
   isMe: boolean; // bubble position: true = right (sent), false = left (received)
   bulkMessages: BulkMessage[];
+  // Animation settings
+  animationStyle: AnimationStyle;
+  greenscreen: boolean;
 }
 
 export const INITIAL_CONFIG: CommentConfig = {
@@ -63,4 +67,7 @@ export const INITIAL_CONFIG: CommentConfig = {
   dmStyle: 'instagram',
   isMe: false,
   bulkMessages: [],
+  // Animation defaults
+  animationStyle: 'pop',
+  greenscreen: false,
 };

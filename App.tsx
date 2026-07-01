@@ -10,8 +10,11 @@ import TikTokCard from './components/TikTokCard';
 import TwitterCard from './components/TwitterCard';
 import InstagramCard from './components/InstagramCard';
 import BubbleChatCard from './components/BubbleChatCard';
+import { PlayerRef } from '@remotion/player';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
+import { AnimationTab } from './components/AnimationTab';
+import { Video, Image as ImageIcon } from 'lucide-react';
 
 const platformOptions: Array<{
   value: Platform;
@@ -36,6 +39,10 @@ const App: React.FC = () => {
   const [isCopying, setIsCopying] = useState(false);
   const [isExportingBulk, setIsExportingBulk] = useState(false);
   const [bulkExportIndex, setBulkExportIndex] = useState(-1);
+  const [activeTab, setActiveTab] = useState<'canvas' | 'animation'>('canvas');
+  const [isExportingVideo, setIsExportingVideo] = useState(false);
+  
+  const playerRef = useRef<PlayerRef>(null);
 
   const handleReset = () => {
     if (window.confirm('Reset all changes?')) {
@@ -153,6 +160,58 @@ const App: React.FC = () => {
     }
   }, [config.bulkMessages, config.platform, config.dmStyle]);
 
+  const handleExportVideo = useCallback(async () => {
+    setIsExportingVideo(true);
+    try {
+      if (window.electronAPI && window.electronAPI.startVideoExport && playerRef.current) {
+        toast.info('Preparing frames for MP4...');
+        
+        await window.electronAPI.startVideoExport();
+        
+        const player = playerRef.current;
+        player.pause();
+        
+        // Wait for player to settle
+        await new Promise(r => setTimeout(r, 500));
+
+        // Get the inner container to capture
+        const container = document.querySelector('.remotion-player-container div') as HTMLElement;
+        if (!container) throw new Error('Player container not found');
+
+        const totalFrames = 120;
+        
+        for (let f = 0; f < totalFrames; f++) {
+          player.seekTo(f);
+          // Allow React and Remotion to re-render
+          await new Promise(r => setTimeout(r, 50));
+          
+          const dataUrl = await toPng(container, {
+            pixelRatio: 1, // 1080p is large enough
+            cacheBust: true,
+          });
+          
+          await window.electronAPI.sendFrame(f, dataUrl);
+        }
+
+        toast.info('Stitching frames with FFMPEG...');
+        const result = await window.electronAPI.finishVideo();
+        
+        if (result.success) {
+          toast.success('Video exported successfully!');
+        } else if (!result.canceled) {
+          toast.error('Failed to encode video.');
+        }
+      } else {
+        toast.error('Video export is only supported in the desktop app.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Render failed.');
+    } finally {
+      setIsExportingVideo(false);
+    }
+  }, []);
+
   const hasBulkMessages = config.bulkMessages.length > 0;
   const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
 
@@ -243,6 +302,29 @@ const App: React.FC = () => {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-[18px] bg-slate-200/50 p-1 mr-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('canvas')}
+                className={`flex h-[36px] items-center gap-2 rounded-[14px] px-4 text-sm font-bold transition-all ${
+                  activeTab === 'canvas' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <ImageIcon size={16} />
+                <span className="hidden sm:inline">Image</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('animation')}
+                className={`flex h-[36px] items-center gap-2 rounded-[14px] px-4 text-sm font-bold transition-all ${
+                  activeTab === 'animation' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Video size={16} />
+                <span className="hidden sm:inline">Animation</span>
+              </button>
+            </div>
+
             <div className="hidden h-[44px] items-center gap-1 rounded-[18px] bg-white/40 p-1 md:flex">
               <button
                 type="button"
@@ -333,18 +415,20 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Preview Canvas Area */}
-        <PreviewCanvas config={config} previewRef={previewRef} zoom={zoom} hasBulkMessages={hasBulkMessages}>
-          {config.platform === 'facebook' && <FacebookCard config={config} />}
-          {config.platform === 'youtube' && <YouTubeCard config={config} />}
-          {config.platform === 'tiktok' && <TikTokCard config={config} />}
-          {config.platform === 'twitter' && <TwitterCard config={config} />}
-          {config.platform === 'instagram' && <InstagramCard config={config} />}
-          {config.platform === 'dm' && <BubbleChatCard config={config} />}
-        </PreviewCanvas>
+        {/* Dynamic Main View */}
+        {activeTab === 'canvas' ? (
+          <>
+            <PreviewCanvas config={config} previewRef={previewRef} zoom={zoom} hasBulkMessages={hasBulkMessages}>
+              {config.platform === 'facebook' && <FacebookCard config={config} />}
+              {config.platform === 'youtube' && <YouTubeCard config={config} />}
+              {config.platform === 'tiktok' && <TikTokCard config={config} />}
+              {config.platform === 'twitter' && <TwitterCard config={config} />}
+              {config.platform === 'instagram' && <InstagramCard config={config} />}
+              {config.platform === 'dm' && <BubbleChatCard config={config} />}
+            </PreviewCanvas>
 
-        {/* Floating Bulk Preview Dock */}
-        {hasBulkMessages && !isExportingBulk && (
+            {/* Floating Bulk Preview Dock */}
+            {hasBulkMessages && !isExportingBulk && (
           <div className="glass-panel absolute bottom-6 left-6 right-6 z-20 rounded-[28px]">
             <div className="p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -401,6 +485,16 @@ const App: React.FC = () => {
               {renderCardForPlatform(config.bulkMessages[bulkExportIndex])}
             </div>
           </div>
+        )}
+          </>
+        ) : (
+          <AnimationTab 
+            config={config} 
+            update={update} 
+            onExportVideo={handleExportVideo} 
+            isExportingVideo={isExportingVideo}
+            playerRef={playerRef}
+          />
         )}
       </main>
     </div>
