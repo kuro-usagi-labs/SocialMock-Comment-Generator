@@ -1,10 +1,19 @@
-export type Platform = 'facebook' | 'youtube' | 'tiktok' | 'twitter' | 'instagram' | 'dm';
+export type Platform = 'facebook' | 'youtube' | 'tiktok' | 'twitter' | 'instagram' | 'dm' | 'text';
 export type Theme = 'light' | 'dark';
 export type CardWidth = number;
 export type PaddingSize = 'compact' | 'normal' | 'spacious';
 export type BackgroundType = 'transparent' | 'solid' | 'gradient';
 export type DmStyle = 'instagram' | 'whatsapp' | 'imessage';
 export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'fade-scale' | 'elastic-spin' | 'flip-in';
+export type AnimationSpeed = 'slow' | 'medium' | 'fast';
+export type VideoExportFormat = 'mp4' | 'mov';
+export type TextAnimationMode = 'off' | 'word' | 'letter';
+export type TextAnimationPreset = 'fade-up' | 'typewriter' | 'pop';
+export type TextTemplate = 'subtitle' | 'hook' | 'lower-third' | 'quote' | 'sticker' | 'neon' | 'minimal';
+export type TextFont = 'inter' | 'outfit' | 'system';
+export type TextWeight = 'regular' | 'medium' | 'bold' | 'black';
+export type TextAlign = 'left' | 'center' | 'right';
+export type TextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
 export interface BulkMessage {
   id: string;
@@ -41,7 +50,22 @@ export interface CommentConfig {
   bulkMessages: BulkMessage[];
   // Animation settings
   animationStyle: AnimationStyle;
+  animationInStyle: AnimationStyle;
+  animationOutStyle: AnimationStyle;
+  animationSpeed: AnimationSpeed;
+  animationDuration: number;
   greenscreen: boolean;
+  textAnimationMode: TextAnimationMode;
+  textAnimationPreset: TextAnimationPreset;
+  textTemplate: TextTemplate;
+  textFont: TextFont;
+  textWeight: TextWeight;
+  textAlign: TextAlign;
+  textColor: string;
+  textStrokeColor: string;
+  textStrokeWidth: number;
+  textShadow: boolean;
+  textTransform: TextTransform;
 }
 
 export const INITIAL_CONFIG: CommentConfig = {
@@ -69,5 +93,20 @@ export const INITIAL_CONFIG: CommentConfig = {
   bulkMessages: [],
   // Animation defaults
   animationStyle: 'pop',
+  animationInStyle: 'pop',
+  animationOutStyle: 'fade-scale',
+  animationSpeed: 'medium',
+  animationDuration: 2,
   greenscreen: false,
+  textAnimationMode: 'word',
+  textAnimationPreset: 'fade-up',
+  textTemplate: 'subtitle',
+  textFont: 'outfit',
+  textWeight: 'black',
+  textAlign: 'center',
+  textColor: '#ffffff',
+  textStrokeColor: '#0f172a',
+  textStrokeWidth: 0,
+  textShadow: true,
+  textTransform: 'none',
 };

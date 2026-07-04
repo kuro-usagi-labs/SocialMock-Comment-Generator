@@ -71,27 +71,36 @@ ipcMain.handle('send-frame', async (event, frameIndex, dataUrl) => {
   return true;
 });
 
-ipcMain.handle('finish-video', async (event) => {
+ipcMain.handle('finish-video', async (event, format = 'mp4') => {
   if (!mainWindow) return { success: false, error: 'No main window' };
+
+  const exportFormat = format === 'mov' ? 'mov' : 'mp4';
+  const isMov = exportFormat === 'mov';
   
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save Animation MP4',
-    defaultPath: 'socialmock-animation.mp4',
-    filters: [{ name: 'Videos', extensions: ['mp4'] }]
+    title: `Save Animation ${exportFormat.toUpperCase()}`,
+    defaultPath: `socialmock-animation.${exportFormat}`,
+    filters: [{ name: isMov ? 'QuickTime Videos' : 'Videos', extensions: [exportFormat] }]
   });
 
   if (canceled || !filePath) return { success: false, canceled: true };
 
   return new Promise((resolve) => {
-    // Compile using ffmpeg
-    const args = [
+    const inputArgs = [
       '-y', // overwrite
       '-framerate', '60',
       '-i', path.join(tempDir, 'frame_%04d.png'),
+    ];
+    const outputArgs = isMov ? [
+      '-c:v', 'qtrle',
+      '-pix_fmt', 'argb',
+      filePath
+    ] : [
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
       filePath
     ];
+    const args = [...inputArgs, ...outputArgs];
 
     execFile(ffmpeg, args, (error, stdout, stderr) => {
       // Clean up frames

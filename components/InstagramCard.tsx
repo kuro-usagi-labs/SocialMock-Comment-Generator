@@ -5,9 +5,10 @@ import { Icons, VerifiedBadge } from './Icons';
 
 interface Props {
   config: CommentConfig;
+  contentNode?: React.ReactNode;
 }
 
-const InstagramCard: React.FC<Props> = ({ config }) => {
+const InstagramCard: React.FC<Props> = ({ config, contentNode }) => {
   const isDark = config.theme === 'dark';
   
   const bgCard = isDark ? 'bg-black' : 'bg-white';
@@ -48,7 +49,7 @@ const InstagramCard: React.FC<Props> = ({ config }) => {
                   className={`${textPrimary} whitespace-pre-wrap break-words`}
                   style={{ fontSize: config.fontSize }}
                 >
-                  {config.content}
+                  {contentNode ?? config.content}
                 </span>
               </div>
 

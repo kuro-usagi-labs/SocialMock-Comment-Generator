@@ -5,9 +5,10 @@ import { Icons, VerifiedBadge } from './Icons';
 
 interface Props {
   config: CommentConfig;
+  contentNode?: React.ReactNode;
 }
 
-const TwitterCard: React.FC<Props> = ({ config }) => {
+const TwitterCard: React.FC<Props> = ({ config, contentNode }) => {
   const isDark = config.theme === 'dark';
   
   const bgCard = isDark ? 'bg-black' : 'bg-white';
@@ -62,7 +63,7 @@ const TwitterCard: React.FC<Props> = ({ config }) => {
               className={`${textPrimary} whitespace-pre-wrap break-words text-left leading-normal mb-3 mt-0.5`}
               style={{ fontSize: config.fontSize }}
             >
-              {config.content}
+              {contentNode ?? config.content}
             </p>
 
             {/* Action Row */}

@@ -5,9 +5,10 @@ import { Icons, VerifiedBadge } from './Icons';
 
 interface Props {
   config: CommentConfig;
+  contentNode?: React.ReactNode;
 }
 
-const FacebookCard: React.FC<Props> = ({ config }) => {
+const FacebookCard: React.FC<Props> = ({ config, contentNode }) => {
   const isDark = config.theme === 'dark';
   
   // Facebook Styling Constants
@@ -50,7 +51,7 @@ const FacebookCard: React.FC<Props> = ({ config }) => {
                 className={`${textPrimary} whitespace-pre-wrap break-words text-left leading-tight`}
                 style={{ fontSize: config.fontSize }}
               >
-                {config.content}
+                {contentNode ?? config.content}
               </p>
 
               {/* Like Count Bubble Overlay */}

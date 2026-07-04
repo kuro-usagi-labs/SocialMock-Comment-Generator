@@ -5,5 +5,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   startVideoExport: () => ipcRenderer.invoke('start-video-export'),
   sendFrame: (frameIndex, dataUrl) => ipcRenderer.invoke('send-frame', frameIndex, dataUrl),
-  finishVideo: () => ipcRenderer.invoke('finish-video'),
+  finishVideo: (format = 'mp4') => ipcRenderer.invoke('finish-video', format),
 });

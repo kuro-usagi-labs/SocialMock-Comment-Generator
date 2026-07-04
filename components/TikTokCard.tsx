@@ -5,9 +5,10 @@ import { Icons, VerifiedBadge } from './Icons';
 
 interface Props {
   config: CommentConfig;
+  contentNode?: React.ReactNode;
 }
 
-const TikTokCard: React.FC<Props> = ({ config }) => {
+const TikTokCard: React.FC<Props> = ({ config, contentNode }) => {
   const isDark = config.theme === 'dark';
   
   // TikTok mostly uses white modal sheets on mobile, but let's support dark for desktop feel
@@ -49,7 +50,7 @@ const TikTokCard: React.FC<Props> = ({ config }) => {
               className={`${textPrimary} whitespace-pre-wrap break-words text-left leading-tight mt-0.5`}
               style={{ fontSize: config.fontSize }}
             >
-              {config.content}
+              {contentNode ?? config.content}
             </p>
 
             {/* Meta Row */}

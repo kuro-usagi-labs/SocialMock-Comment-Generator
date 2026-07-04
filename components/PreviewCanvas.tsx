@@ -29,10 +29,10 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
 
   return (
     <div 
-      className="relative min-h-0 flex-1 overflow-auto px-4 md:px-6 lg:pr-[100px] xl:pr-[110px]"
+      className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-slate-100 px-4 md:px-6"
       style={{
-        backgroundImage: `radial-gradient(circle, rgba(99,102,241,0.15) 1px, transparent 1.2px)`,
-        backgroundSize: '18px 18px',
+        backgroundImage: `linear-gradient(rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)`,
+        backgroundSize: '28px 28px',
       }}
     >
       <div
@@ -40,13 +40,13 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
           hasBulkMessages ? 'pb-[240px]' : 'pb-16'
         }`}
       >
-        <div className="pointer-events-none absolute left-5 top-5 hidden items-center gap-2 rounded-full glass-panel px-3 py-1.5 text-xs font-bold text-slate-500 md:flex shadow-sm">
+        <div className="pointer-events-none absolute left-4 top-4 hidden items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 md:flex shadow-sm">
           <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.16)]" />
           <span className="truncate">Live Preview</span>
         </div>
 
         <div
-          className={`rounded-[24px] transition-transform ${config.backgroundType === 'transparent' ? '' : 'shadow-[0_28px_70px_rgba(15,23,42,0.15)]'}`}
+          className={`rounded-lg transition-transform ${config.backgroundType === 'transparent' ? '' : 'shadow-[0_28px_70px_rgba(15,23,42,0.15)]'}`}
           style={{ maxWidth: `min(100%, ${config.width * displayZoom}px)` }}
         >
           <div style={{ width: `${config.width * displayZoom}px` }}>
@@ -57,7 +57,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
             >
               <div
                 id="export-container"
-                className={`p-8 rounded-[24px] flex justify-center ${getBackgroundClass()}`}
+                className={`rounded-lg p-8 flex justify-center ${getBackgroundClass()}`}
                 style={getBackgroundStyle()}
               >
                 <AnimatePresence mode="wait">
@@ -78,7 +78,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
         </div>
         
         <div
-          className={`absolute left-1/2 hidden -translate-x-1/2 rounded-[22px] glass-panel p-1.5 shadow-lg lg:block ${
+          className={`absolute left-1/2 hidden -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm lg:block ${
             hasBulkMessages ? 'bottom-[228px]' : 'bottom-10'
           }`}
         >

@@ -16,7 +16,16 @@ import {
   User,
   Wand2,
 } from 'lucide-react';
-import { CommentConfig, DmStyle, PaddingSize } from '../types';
+import {
+  CommentConfig,
+  DmStyle,
+  PaddingSize,
+  TextAlign,
+  TextFont,
+  TextTemplate,
+  TextTransform,
+  TextWeight,
+} from '../types';
 import { BulkGenerator } from './BulkGenerator';
 import { createRandomProfiles } from '../utils/profileUtils';
 
@@ -35,6 +44,36 @@ const dmStyles: Array<{ value: DmStyle; label: string }> = [
   { value: 'imessage', label: 'iMessage' },
 ];
 
+const textTemplates: Array<{ value: TextTemplate; label: string }> = [
+  { value: 'subtitle', label: 'Subtitle' },
+  { value: 'hook', label: 'Hook' },
+  { value: 'lower-third', label: 'Lower Third' },
+  { value: 'quote', label: 'Quote' },
+  { value: 'sticker', label: 'Sticker' },
+  { value: 'neon', label: 'Neon' },
+  { value: 'minimal', label: 'Minimal' },
+];
+
+const textFonts: Array<{ value: TextFont; label: string }> = [
+  { value: 'inter', label: 'Inter' },
+  { value: 'outfit', label: 'Outfit' },
+  { value: 'system', label: 'System' },
+];
+
+const textWeights: Array<{ value: TextWeight; label: string }> = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'bold', label: 'Bold' },
+  { value: 'black', label: 'Black' },
+];
+
+const textTransforms: Array<{ value: TextTransform; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: 'uppercase', label: 'Upper' },
+  { value: 'lowercase', label: 'Lower' },
+  { value: 'capitalize', label: 'Title' },
+];
+
 const gradients = [
   'from-blue-400 to-purple-500',
   'from-pink-500 to-orange-400',
@@ -45,15 +84,16 @@ const gradients = [
 const navItems = [
   { label: 'Profile', icon: User, target: 'editor-profile' },
   { label: 'Content', icon: MessageCircle, target: 'editor-content' },
+  { label: 'Text', icon: Type, target: 'editor-text-style' },
   { label: 'Style', icon: Palette, target: 'editor-appearance' },
   { label: 'AI', icon: Sparkles, target: 'editor-ai' },
 ];
 
 const inputClass =
-  'glass-input w-full rounded-[16px] px-4 py-3 text-sm font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium';
+  'glass-input w-full rounded-lg px-3.5 py-3 text-sm font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium';
 
 const iconInputClass =
-  'glass-input w-full rounded-[16px] py-3 pl-10 pr-4 text-sm font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium';
+  'glass-input w-full rounded-lg py-3 pl-10 pr-3.5 text-sm font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium';
 
 const labelClass = 'font-display text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1 block';
 
@@ -68,17 +108,17 @@ const Section: React.FC<{
   children: React.ReactNode;
   action?: React.ReactNode;
 }> = ({ id, title, icon, children, action }) => (
-  <section id={id} className="scroll-mt-5 px-5 py-6">
-    <div className="mb-5 flex items-center justify-between gap-3">
+  <section id={id} className="scroll-mt-4 px-4 py-5">
+    <div className="mb-4 flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-slate-900 text-white shadow-md">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white shadow-sm">
           {icon}
         </span>
-        <h2 className="font-display truncate text-[14px] font-black uppercase tracking-[0.1em] text-slate-900">{title}</h2>
+        <h2 className="font-display truncate text-[13px] font-black uppercase tracking-[0.12em] text-slate-900">{title}</h2>
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
-    <div className="space-y-5">{children}</div>
+    <div className="space-y-4">{children}</div>
   </section>
 );
 
@@ -91,7 +131,7 @@ const Toggle: React.FC<{
   <button
     type="button"
     onClick={onChange}
-    className="glass-button flex w-full min-w-0 items-center justify-between rounded-[18px] px-4 py-3 text-left transition"
+    className="glass-button flex w-full min-w-0 items-center justify-between rounded-lg px-4 py-3 text-left transition"
   >
     <span className="flex min-w-0 items-center gap-3 font-bold text-slate-700">
       {icon && <span className="shrink-0">{icon}</span>}
@@ -116,6 +156,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   isExportingBulk,
 }) => {
   const isDm = config.platform === 'dm';
+  const isText = config.platform === 'text';
+  const visibleNavItems = navItems.filter(item => {
+    if (isText) {
+      return ['editor-content', 'editor-text-style', 'editor-appearance'].includes(item.target);
+    }
+    return item.target !== 'editor-text-style';
+  });
 
   const handleRandomizeProfile = () => {
     const isMale = Math.random() > 0.5;
@@ -128,27 +175,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <div className="glass-panel flex h-[54vh] w-full flex-shrink-0 flex-row overflow-hidden rounded-t-[32px] md:h-full md:w-auto md:rounded-[32px]">
-      <nav className="hidden w-[80px] flex-col items-center bg-white/40 px-3 py-6 md:flex border-r border-white/60">
+    <div className="flex h-[54vh] w-full flex-shrink-0 flex-row overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_-16px_48px_rgba(15,23,42,0.12)] md:h-full md:w-full md:rounded-none md:border-0 md:shadow-none">
+      <nav className="hidden w-[72px] flex-col items-center border-r border-slate-800 bg-slate-950 px-3 py-4 md:flex">
         <button
           type="button"
           onClick={() => scrollToSection('editor-profile')}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-indigo-600 font-display text-base font-black tracking-tight text-white shadow-lg transition hover:bg-indigo-500 hover:-translate-y-1"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white font-display text-sm font-black tracking-tight text-slate-950 shadow-lg transition hover:bg-indigo-50"
           title="SocialMock"
         >
           SM
         </button>
 
-        <div className="mt-8 flex flex-1 flex-col items-center gap-4">
-          {navItems.map((item, index) => {
+        <div className="mt-7 flex flex-1 flex-col items-center gap-3">
+          {visibleNavItems.map((item, index) => {
             const Icon = item.icon;
             return (
                <button
                 key={item.target}
                 type="button"
                 onClick={() => scrollToSection(item.target)}
-                className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] transition ${
-                  index === 0 ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-white/60 hover:text-slate-900'
+                className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition ${
+                  index === 0 ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:bg-white/10 hover:text-white'
                 }`}
                 title={item.label}
               >
@@ -161,36 +208,37 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <button
           type="button"
           onClick={handleReset}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] text-slate-400 transition hover:bg-white/60 hover:text-slate-900"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white"
           title="Reset"
         >
           <RotateCcw size={20} strokeWidth={2} />
         </button>
       </nav>
 
-      <aside className="flex h-full w-full flex-col md:w-[320px] xl:w-[350px]">
-        <header className="border-b border-white/60 px-5 py-6">
+      <aside className="flex h-full w-full flex-col md:w-[348px]">
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <h1 className="font-display truncate text-xl font-black tracking-tight text-slate-900">SocialMock</h1>
-              <p className="mt-0.5 truncate text-sm font-bold text-slate-500">Creative Studio</p>
+              <h1 className="font-display truncate text-lg font-black tracking-tight text-slate-900">Inspector</h1>
+              <p className="mt-0.5 truncate text-xs font-bold text-slate-500">Edit content, style, and output</p>
             </div>
-            <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-600">
+            <span className="shrink-0 rounded-md bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700">
               Ready
             </span>
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-8 relative">
-          <Section 
-            id="editor-profile" 
-            title="Profile" 
+        <div className="relative min-h-0 flex-1 overflow-y-auto pb-6">
+          {!isText && (
+          <Section
+            id="editor-profile"
+            title="Profile"
             icon={<User size={18} />}
             action={
               <button
                 type="button"
                 onClick={handleRandomizeProfile}
-                className="glass-button flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold text-indigo-600"
+                className="glass-button flex min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-bold text-indigo-600"
                 title="Randomize Profile"
               >
                 <Dices size={14} className="shrink-0" />
@@ -199,7 +247,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }
           >
             {isDm && (
-              <div className="space-y-3 glass-card rounded-[20px] p-4">
+              <div className="glass-card space-y-3 rounded-lg p-4">
                 <div className="space-y-2">
                   <div className={labelClass}>DM Style</div>
                   <div className="segmented-control grid grid-cols-3">
@@ -228,12 +276,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             )}
             <div className="flex gap-4">
-              <div className="group relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-[24px] shadow-sm">
+              <div className="group relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg shadow-sm">
                 {config.avatarUrl ? (
                   <img src={config.avatarUrl} alt="Avatar preview" className="h-full w-full object-cover" />
                 ) : (
                   <div
-                    className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-400 to-fuchsia-500 text-3xl font-black text-white"
+                    className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-400 to-fuchsia-500 text-2xl font-black text-white"
                     style={{ backgroundColor: config.avatarColor }}
                   >
                     {config.avatarInitials}
@@ -251,7 +299,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     type="color"
                     value={config.avatarColor}
                     onChange={(event) => update('avatarColor', event.target.value)}
-                    className="glass-input h-[46px] w-full cursor-pointer rounded-[16px] p-1"
+                    className="glass-input h-[46px] w-full cursor-pointer rounded-lg p-1"
                     aria-label="Avatar color"
                   />
                   <input
@@ -267,7 +315,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => update('avatarUrl', null)}
-                    className="glass-button w-full rounded-[16px] px-3 py-3 text-left text-xs font-bold text-slate-500"
+                    className="glass-button w-full rounded-lg px-3 py-3 text-left text-xs font-bold text-slate-500"
                   >
                     <span className="block truncate">Uploaded image. Click to remove.</span>
                   </button>
@@ -318,41 +366,44 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               />
             )}
           </Section>
+          )}
 
-          <hr className="border-white/60 mx-5" />
+          {!isText && <hr className="border-white/60 mx-5" />}
 
           <Section id="editor-content" title="Content" icon={<MessageCircle size={18} />}>
-            <div className="relative">
-              <Clock size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={config.timestamp}
-                onChange={(event) => update('timestamp', event.target.value)}
-                className={iconInputClass}
-                placeholder={isDm ? 'Timestamp, e.g. Today' : 'Timestamp, e.g. 2h'}
-              />
-            </div>
+            {!isText && (
+              <div className="relative">
+                <Clock size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={config.timestamp}
+                  onChange={(event) => update('timestamp', event.target.value)}
+                  className={iconInputClass}
+                  placeholder={isDm ? 'Timestamp, e.g. Today' : 'Timestamp, e.g. 2h'}
+                />
+              </div>
+            )}
 
             <textarea
               value={config.content}
               onChange={(event) => update('content', event.target.value)}
               className={`${inputClass} min-h-[120px] resize-none leading-relaxed`}
-              placeholder={isDm ? 'Write a DM message...' : 'Write a comment...'}
+              placeholder={isText ? 'Write overlay text...' : isDm ? 'Write a DM message...' : 'Write a comment...'}
             />
 
-            <div className="glass-card space-y-3 rounded-[20px] p-4">
+            <div className="glass-card space-y-3 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
                   <Type size={16} />
                   Font size
                 </span>
-                <span className="rounded-[10px] bg-white/60 px-2.5 py-1 text-xs font-black text-indigo-600">
+                <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600">
                   {config.fontSize}px
                 </span>
               </div>
               <input
                 type="range"
-                min="12"
+                min={isText ? '16' : '12'}
                 max="32"
                 value={config.fontSize}
                 onChange={(event) => update('fontSize', parseInt(event.target.value))}
@@ -362,6 +413,138 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </Section>
 
           <hr className="border-white/60 mx-5" />
+
+          {isText && (
+            <>
+              <Section id="editor-text-style" title="Text Style" icon={<Type size={18} />}>
+                <div className="space-y-2">
+                  <div className={labelClass}>Template</div>
+                  <select
+                    value={config.textTemplate}
+                    onChange={(event) => update('textTemplate', event.target.value as TextTemplate)}
+                    className={`${inputClass} cursor-pointer`}
+                  >
+                    {textTemplates.map(template => (
+                      <option key={template.value} value={template.value}>{template.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <div className={labelClass}>Font</div>
+                    <select
+                      value={config.textFont}
+                      onChange={(event) => update('textFont', event.target.value as TextFont)}
+                      className={`${inputClass} cursor-pointer`}
+                    >
+                      {textFonts.map(font => (
+                        <option key={font.value} value={font.value}>{font.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <div className={labelClass}>Weight</div>
+                    <select
+                      value={config.textWeight}
+                      onChange={(event) => update('textWeight', event.target.value as TextWeight)}
+                      className={`${inputClass} cursor-pointer`}
+                    >
+                      {textWeights.map(weight => (
+                        <option key={weight.value} value={weight.value}>{weight.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className={labelClass}>Alignment</div>
+                  <div className="segmented-control grid grid-cols-3">
+                    {(['left', 'center', 'right'] as TextAlign[]).map(align => (
+                      <button
+                        key={align}
+                        type="button"
+                        onClick={() => update('textAlign', align)}
+                        className={`segmented-btn ${
+                          config.textAlign === align ? 'segmented-btn-active' : 'segmented-btn-inactive'
+                        }`}
+                      >
+                        <span className="block truncate capitalize">{align}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className={labelClass}>Transform</div>
+                  <div className="segmented-control grid grid-cols-4">
+                    {textTransforms.map(transform => (
+                      <button
+                        key={transform.value}
+                        type="button"
+                        onClick={() => update('textTransform', transform.value)}
+                        className={`segmented-btn ${
+                          config.textTransform === transform.value ? 'segmented-btn-active' : 'segmented-btn-inactive'
+                        }`}
+                      >
+                        <span className="block truncate">{transform.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                <div className="glass-input flex items-center gap-3 rounded-lg px-3 py-2">
+                    <input
+                      type="color"
+                      value={config.textColor}
+                      onChange={(event) => update('textColor', event.target.value)}
+                      className="h-10 w-12 shrink-0 cursor-pointer rounded-[12px] border-0 bg-transparent p-0"
+                      aria-label="Text color"
+                    />
+                    <span className="truncate text-sm font-bold text-slate-700">Fill</span>
+                  </div>
+                <div className="glass-input flex items-center gap-3 rounded-lg px-3 py-2">
+                    <input
+                      type="color"
+                      value={config.textStrokeColor}
+                      onChange={(event) => update('textStrokeColor', event.target.value)}
+                      className="h-10 w-12 shrink-0 cursor-pointer rounded-[12px] border-0 bg-transparent p-0"
+                      aria-label="Stroke color"
+                    />
+                    <span className="truncate text-sm font-bold text-slate-700">Stroke</span>
+                  </div>
+                </div>
+
+                <div className="glass-card space-y-3 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-700">Stroke width</span>
+                    <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600">
+                      {config.textStrokeWidth}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="8"
+                    step="1"
+                    value={config.textStrokeWidth}
+                    onChange={(event) => update('textStrokeWidth', parseInt(event.target.value))}
+                    className="w-full accent-indigo-600"
+                  />
+                </div>
+
+                <Toggle
+                  checked={config.textShadow}
+                  onChange={() => update('textShadow', !config.textShadow)}
+                  label="Text shadow"
+                  icon={<Sparkles size={16} />}
+                />
+              </Section>
+
+              <hr className="border-white/60 mx-5" />
+            </>
+          )}
 
           <Section id="editor-appearance" title="Appearance" icon={<Palette size={18} />}>
             <div className="space-y-2">
@@ -386,12 +569,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
 
             {config.backgroundType === 'solid' && (
-              <div className="glass-input flex items-center gap-3 rounded-[16px] px-3 py-2">
+              <div className="glass-input flex items-center gap-3 rounded-lg px-3 py-2">
                 <input
                   type="color"
                   value={config.backgroundColor.startsWith('#') ? config.backgroundColor : '#e5e7eb'}
                   onChange={(event) => update('backgroundColor', event.target.value)}
-                  className="h-10 w-12 shrink-0 cursor-pointer rounded-[12px] border-0 bg-transparent p-0"
+                    className="h-10 w-12 shrink-0 cursor-pointer rounded-md border-0 bg-transparent p-0"
                   aria-label="Background color"
                 />
                 <span className="truncate text-sm font-bold text-slate-700">Canvas Color</span>
@@ -405,7 +588,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     key={gradient}
                     type="button"
                     onClick={() => update('backgroundColor', gradient)}
-                    className={`h-12 rounded-[14px] bg-gradient-to-r shadow-sm transition-transform hover:scale-105 ${gradient} ${
+                    className={`h-12 rounded-lg bg-gradient-to-r shadow-sm transition-transform hover:scale-105 ${gradient} ${
                       config.backgroundColor === gradient ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
                     }`}
                     aria-label={`Use ${gradient} gradient`}
@@ -414,7 +597,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             )}
 
-            {!isDm && (
+            {!isDm && !isText && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="relative">
                   <ThumbsUp size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
@@ -447,10 +630,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             )}
 
-            <div className="glass-card space-y-3 rounded-[20px] p-4">
+            <div className="glass-card space-y-3 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-slate-700">Output width</span>
-                <span className="rounded-[10px] bg-white/60 px-2.5 py-1 text-xs font-black text-indigo-600">
+                <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600">
                   {config.width}px
                 </span>
               </div>
@@ -487,16 +670,20 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           </Section>
 
-          <hr className="border-white/60 mx-5" />
+          {!isText && (
+            <>
+              <hr className="border-white/60 mx-5" />
 
-          <Section id="editor-ai" title="AI Generator" icon={<Wand2 size={18} />}>
-            <BulkGenerator
-              config={config}
-              update={update}
-              onBulkExport={onBulkExport}
-              isExportingBulk={isExportingBulk}
-            />
-          </Section>
+              <Section id="editor-ai" title="AI Generator" icon={<Wand2 size={18} />}>
+                <BulkGenerator
+                  config={config}
+                  update={update}
+                  onBulkExport={onBulkExport}
+                  isExportingBulk={isExportingBulk}
+                />
+              </Section>
+            </>
+          )}
         </div>
       </aside>
     </div>
