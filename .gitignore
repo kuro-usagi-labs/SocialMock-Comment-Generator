@@ -28,3 +28,7 @@ release
 
 .env
 
+# Local QA artifacts
+.playwright-cli/
+output/
+
