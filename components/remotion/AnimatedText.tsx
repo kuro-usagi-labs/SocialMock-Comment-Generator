@@ -44,7 +44,11 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
     <>
       {tokens.map((token, index) => {
         if (/^\s+$/.test(token)) {
-          return <React.Fragment key={`${token}-${index}`}>{token}</React.Fragment>;
+          return (
+            <span key={`${token}-${index}`} style={{ whiteSpace: 'pre-wrap' }}>
+              {token}
+            </span>
+          );
         }
 
         const tokenStart = startFrame + index * stagger;

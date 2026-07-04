@@ -59,6 +59,7 @@ export const TextOverlayCard: React.FC<Props> = ({ config, contentNode }) => {
     WebkitTextStroke: config.textStrokeWidth > 0 ? `${config.textStrokeWidth}px ${config.textStrokeColor}` : undefined,
     textShadow: config.textShadow ? '0 12px 34px rgba(15,23,42,0.45)' : 'none',
     overflowWrap: 'anywhere',
+    whiteSpace: 'pre-wrap',
     ...templateStyle(config),
   };
 
