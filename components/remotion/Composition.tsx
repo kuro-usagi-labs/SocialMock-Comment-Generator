@@ -8,7 +8,16 @@ export const MainComposition: React.FC<{ config: CommentConfig; message?: BulkMe
   const backgroundColor = config.greenscreen ? '#00FF00' : 'transparent';
 
   return (
-    <AbsoluteFill style={{ backgroundColor, justifyContent: 'center', alignItems: 'center' }}>
+    <AbsoluteFill
+      style={{
+        backgroundColor,
+        justifyContent: 'center',
+        alignItems: 'center',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+        textRendering: 'geometricPrecision',
+      }}
+    >
       <AnimatedCard config={config} message={message} />
     </AbsoluteFill>
   );

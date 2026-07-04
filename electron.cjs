@@ -92,8 +92,11 @@ ipcMain.handle('finish-video', async (event, format = 'mp4') => {
       '-i', path.join(tempDir, 'frame_%04d.png'),
     ];
     const outputArgs = isMov ? [
-      '-c:v', 'qtrle',
-      '-pix_fmt', 'argb',
+      '-c:v', 'prores_ks',
+      '-profile:v', '4444',
+      '-pix_fmt', 'yuva444p10le',
+      '-alpha_bits', '16',
+      '-vendor', 'apl0',
       filePath
     ] : [
       '-c:v', 'libx264',

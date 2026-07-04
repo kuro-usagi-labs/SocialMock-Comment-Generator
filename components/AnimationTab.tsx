@@ -411,12 +411,12 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
               ) : (
                 <>
                   <Layers size={18} />
-                  Export MOV with Alpha
+                  Export ProRes 4444 MOV
                 </>
               )}
             </button>
             <p className="mt-3 text-center text-xs text-slate-500">
-              MP4 uses solid video output. MOV preserves alpha for transparent backgrounds.
+              MP4 uses solid video output. ProRes 4444 MOV preserves high-quality alpha for compositing.
             </p>
           </div>
         </div>
