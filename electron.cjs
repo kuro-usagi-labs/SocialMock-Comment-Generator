@@ -274,7 +274,7 @@ ipcMain.handle('render-video', async (event, options) => {
   if (canceled || !filePath) return { success: false, canceled: true };
 
   try {
-    const { renderMedia, selectComposition } = require('@remotion/renderer');
+    const { renderMedia, renderFrames, selectComposition } = require('@remotion/renderer');
 
     // Step 1: Bundle the Remotion project
     mainWindow.webContents.send('render-progress', { 
@@ -311,63 +311,138 @@ ipcMain.handle('render-video', async (event, options) => {
       height: config.width || 1080, // square by default
     };
 
-    // Step 3: Render the video
+    // Use Electron's embedded Chromium for rendering
+    const electronChromiumPath = getElectronChromiumPath();
+
+    // Step 3: Render
     mainWindow.webContents.send('render-progress', { 
       progress: 0.1, 
       stage: 'Rendering frames...' 
     });
 
-    // Determine codec and pixel format based on export format
-    let codec, pixelFormat, proresProfile, imageFormat;
     if (isMov) {
-      codec = 'prores';
-      proresProfile = '4444';
-      pixelFormat = 'yuva444p10le';
-      imageFormat = 'png'; // PNG frames preserve alpha
-    } else if (isGif) {
-      codec = 'gif';
-      pixelFormat = undefined; // GIF handles its own palette
-      imageFormat = 'png';
-    } else if (isWebm) {
-      codec = 'vp8';
-      pixelFormat = 'yuva420p';
-      imageFormat = 'png'; // PNG frames preserve alpha
-    } else {
-      // MP4
-      codec = 'h264';
-      pixelFormat = 'yuv420p';
-      imageFormat = 'jpeg'; // faster, no alpha needed
-    }
+      // ── MOV Alpha: renderFrames() + manual FFmpeg prores_ks ──
+      // Remotion's renderMedia() loses alpha in ProRes encoding.
+      // We render individual transparent PNG frames, then encode 
+      // manually with FFmpeg using prores_ks which properly handles alpha.
+      
+      const os = require('os');
+      const { execFile } = require('child_process');
+      
+      const framesDir = path.join(os.tmpdir(), `socialmock-frames-${Date.now()}`);
+      fs.mkdirSync(framesDir, { recursive: true });
 
-    // Use Electron's embedded Chromium for rendering (saves ~150MB download)
-    const electronChromiumPath = getElectronChromiumPath();
-
-    await renderMedia({
-      composition: compositionWithOverrides,
-      serveUrl: bundlePath,
-      codec,
-      outputLocation: filePath,
-      inputProps: { config },
-      ...(isMov && { proresProfile }),
-      ...(pixelFormat && { pixelFormat }),
-      imageFormat,
-      ...(isGif && { everyNthFrame: 2 }), // GIF max 50fps → render 60fps, take every 2nd frame = 30fps
-      ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
-      ...(binariesDirectory && { binariesDirectory }),
-      ...(needsAlpha && { 
-        chromiumOptions: { 
-          gl: 'angle',
+      await renderFrames({
+        composition: compositionWithOverrides,
+        serveUrl: bundlePath,
+        inputProps: { config },
+        imageFormat: 'png',
+        outputDir: framesDir,
+        ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
+        ...(binariesDirectory && { binariesDirectory }),
+        chromiumOptions: { gl: 'angle' },
+        onFrameUpdate: (frame) => {
+          const progress = 0.1 + (frame / durationInFrames) * 0.6;
+          mainWindow.webContents.send('render-progress', {
+            progress,
+            stage: `Rendering frame ${frame + 1}/${durationInFrames}...`,
+          });
         },
-      }),
-      onProgress: ({ progress }) => {
-        // progress is 0-1
-        const overallProgress = 0.1 + progress * 0.85;
-        mainWindow.webContents.send('render-progress', {
-          progress: overallProgress,
-          stage: `Rendering... ${Math.round(progress * 100)}%`,
+      });
+
+      // Step 4: Encode PNGs → ProRes 4444 MOV with FFmpeg
+      mainWindow.webContents.send('render-progress', { 
+        progress: 0.75, 
+        stage: 'Encoding ProRes 4444 with alpha...' 
+      });
+
+      // Get FFmpeg binary path
+      let ffmpegPath;
+      try {
+        ffmpegPath = require('ffmpeg-static');
+        if (ffmpegPath && ffmpegPath.includes('app.asar')) {
+          ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+        }
+      } catch (e) {
+        // Try Remotion's bundled ffmpeg
+        if (binariesDirectory) {
+          ffmpegPath = path.join(binariesDirectory, 'ffmpeg.exe');
+        }
+      }
+
+      if (!ffmpegPath) {
+        throw new Error('FFmpeg not available for MOV encoding');
+      }
+
+      // Encode with explicit alpha channel preservation
+      const ffmpegArgs = [
+        '-y',
+        '-framerate', String(fps),
+        '-i', path.join(framesDir, 'element-0-frame%d.png'),
+        '-c:v', 'prores_ks',
+        '-profile:v', '4444',
+        '-pix_fmt', 'yuva444p10le',
+        '-vendor', 'apl0',
+        '-bits_per_mb', '8000',
+        '-an',
+        filePath,
+      ];
+
+      await new Promise((resolve, reject) => {
+        const proc = execFile(ffmpegPath, ffmpegArgs, (error, stdout, stderr) => {
+          // Clean up temp frames
+          try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (e) {}
+          
+          if (error) {
+            console.error('[FFmpeg ProRes] Error:', error, stderr);
+            reject(new Error(`FFmpeg ProRes encode failed: ${stderr || error.message}`));
+          } else {
+            resolve();
+          }
         });
-      },
-    });
+      });
+
+    } else {
+      // ── Standard renderMedia for MP4, GIF, WebM ──
+      let codec, pixelFormat, imageFormat;
+      if (isGif) {
+        codec = 'gif';
+        pixelFormat = undefined;
+        imageFormat = 'png';
+      } else if (isWebm) {
+        codec = 'vp8';
+        pixelFormat = 'yuva420p';
+        imageFormat = 'png';
+      } else {
+        // MP4
+        codec = 'h264';
+        pixelFormat = 'yuv420p';
+        imageFormat = 'jpeg';
+      }
+
+      await renderMedia({
+        composition: compositionWithOverrides,
+        serveUrl: bundlePath,
+        codec,
+        outputLocation: filePath,
+        inputProps: { config },
+        ...(pixelFormat && { pixelFormat }),
+        imageFormat,
+        ...(isGif && { everyNthFrame: 2 }),
+        ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
+        ...(binariesDirectory && { binariesDirectory }),
+        ...(isWebm && { 
+          chromiumOptions: { gl: 'angle' },
+        }),
+        onProgress: ({ progress }) => {
+          const overallProgress = 0.1 + progress * 0.85;
+          mainWindow.webContents.send('render-progress', {
+            progress: overallProgress,
+            stage: `Rendering... ${Math.round(progress * 100)}%`,
+          });
+        },
+      });
+    }
 
     mainWindow.webContents.send('render-progress', { 
       progress: 1, 
