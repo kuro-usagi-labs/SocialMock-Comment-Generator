@@ -168,17 +168,33 @@ async function getOrCreateBundle() {
         `url(file:///${absoluteAssetsDir}/$1)`
       );
       
-      // Strip ALL background/background-color from body rule in compiled CSS
-      // The Vite build sets body { background-color: #e8edf4 } which makes
-      // the Remotion render page opaque, preventing MOV alpha transparency.
-      cssContent = cssContent.replace(/background-color\s*:\s*#e8edf4/g, 'background-color:transparent');
+      // ── MOV Alpha Fix ──────────────────────────────────────────────
+      // The compiled Vite CSS includes rules like:
+      //   body { background-color: #e8edf4; overflow: hidden; ... }
+      // This makes the Remotion headless page opaque, killing alpha.
+      // Strategy: strip ALL background-related properties from ANY rule
+      // that could affect the page background, then prepend a forceful
+      // transparent override.
+      
+      // 1. Remove background-color from any minified rule containing it
+      cssContent = cssContent.replace(/background-color\s*:[^;}]+/g, (match) => {
+        // Only strip colors that look like opaque solid colors (hex, rgb without alpha)
+        if (/transparent|rgba.*,\s*0\)/.test(match)) return match;
+        return 'background-color:transparent';
+      });
+      
+      // 2. Remove overflow:hidden from body (prevents clipping)
       cssContent = cssContent.replace(/overflow\s*:\s*hidden/g, 'overflow:visible');
       
-      // Prepend a high-specificity transparent override as safety net
+      // 3. Prepend ultra-aggressive transparent override
       const transparentCSS = `
-html, body, html body, body.remotion-preview, #root, #remotion-canvas, #container, div[data-remotion-canvas], #__remotion_frame {
+/* Remotion alpha transparency override */
+html, body, html body, #root, #remotion-canvas, #container,
+div[data-remotion-canvas], #__remotion_frame,
+[data-remotion-container], .remotion-player {
   background: transparent !important;
   background-color: transparent !important;
+  background-image: none !important;
 }
 `;
       cssContent = transparentCSS + cssContent;
@@ -242,13 +258,24 @@ ipcMain.handle('render-video', async (event, options) => {
 
   const { config, format = 'mp4', fps = 60, durationInFrames = 120 } = options;
   const isMov = format === 'mov';
+  const isGif = format === 'gif';
+  const isWebm = format === 'webm';
+  const needsAlpha = isMov || isWebm;
+
+  // File type filter labels
+  const filterNames = {
+    mp4: 'MP4 Videos',
+    mov: 'QuickTime ProRes Videos',
+    gif: 'Animated GIF',
+    webm: 'WebM Videos (Alpha)',
+  };
 
   // Ask user where to save
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: `Save Animation ${format.toUpperCase()}`,
     defaultPath: `socialmock-animation.${format}`,
     filters: [{ 
-      name: isMov ? 'QuickTime Videos' : 'Videos', 
+      name: filterNames[format] || 'Videos', 
       extensions: [format] 
     }]
   });
@@ -299,15 +326,26 @@ ipcMain.handle('render-video', async (event, options) => {
       stage: 'Rendering frames...' 
     });
 
-    // Determine codec and pixel format
-    let codec, pixelFormat, proresProfile;
+    // Determine codec and pixel format based on export format
+    let codec, pixelFormat, proresProfile, imageFormat;
     if (isMov) {
       codec = 'prores';
       proresProfile = '4444';
       pixelFormat = 'yuva444p10le';
+      imageFormat = 'png'; // PNG frames preserve alpha
+    } else if (isGif) {
+      codec = 'gif';
+      pixelFormat = undefined; // GIF handles its own palette
+      imageFormat = 'png';
+    } else if (isWebm) {
+      codec = 'vp8';
+      pixelFormat = 'yuva420p';
+      imageFormat = 'png'; // PNG frames preserve alpha
     } else {
+      // MP4
       codec = 'h264';
       pixelFormat = 'yuv420p';
+      imageFormat = 'jpeg'; // faster, no alpha needed
     }
 
     // Use Electron's embedded Chromium for rendering (saves ~150MB download)
@@ -320,11 +358,11 @@ ipcMain.handle('render-video', async (event, options) => {
       outputLocation: filePath,
       inputProps: { config },
       ...(isMov && { proresProfile }),
-      pixelFormat,
-      imageFormat: isMov ? 'png' : 'jpeg',
+      ...(pixelFormat && { pixelFormat }),
+      imageFormat,
       ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
       ...(binariesDirectory && { binariesDirectory }),
-      ...(isMov && { 
+      ...(needsAlpha && { 
         chromiumOptions: { 
           gl: 'angle',
         },

@@ -398,25 +398,48 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
                 </>
               )}
             </button>
-            <button
-              onClick={() => onExportVideo('mov')}
-              disabled={isExportingVideo}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-white px-5 py-3.5 text-sm font-bold text-slate-800 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50 disabled:hover:translate-y-0"
-            >
-              {isExportingVideo && videoExportFormat === 'mov' ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  Rendering MOV...
-                </>
-              ) : (
-                <>
-                  <Layers size={18} />
-                  Export ProRes 4444 MOV
-                </>
-              )}
-            </button>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onExportVideo('mov')}
+                disabled={isExportingVideo}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-3 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {isExportingVideo && videoExportFormat === 'mov' ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Layers size={16} />
+                )}
+                <span>MOV α</span>
+              </button>
+              <button
+                onClick={() => onExportVideo('webm')}
+                disabled={isExportingVideo}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-3 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:bg-cyan-50 hover:text-cyan-700 disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {isExportingVideo && videoExportFormat === 'webm' ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Video size={16} />
+                )}
+                <span>WebM α</span>
+              </button>
+              <button
+                onClick={() => onExportVideo('gif')}
+                disabled={isExportingVideo}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-3 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:bg-violet-50 hover:text-violet-700 disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {isExportingVideo && videoExportFormat === 'gif' ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Play size={16} />
+                )}
+                <span>GIF</span>
+              </button>
+            </div>
+
             <p className="mt-3 text-center text-xs text-slate-500">
-              MP4 uses solid video output. ProRes 4444 MOV preserves high-quality alpha for compositing.
+              MP4 for universal playback · MOV/WebM preserve alpha for compositing · GIF for social sharing
             </p>
           </div>
         </div>
