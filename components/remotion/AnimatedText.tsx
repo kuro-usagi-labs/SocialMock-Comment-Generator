@@ -1,12 +1,14 @@
 import React from 'react';
 import { Easing, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { AnimationSpeed, TextAnimationMode, TextAnimationPreset } from '../../types';
+import { AnimationSpeed, TextAnimationMode, TextAnimationPreset, EasingPreset, BezierPoints } from '../../types';
 
 interface AnimatedTextProps {
   children: string;
   mode: TextAnimationMode;
   preset: TextAnimationPreset;
   speed: AnimationSpeed;
+  easingPreset?: EasingPreset;
+  customBezier?: BezierPoints;
   className?: string;
 }
 
@@ -27,6 +29,8 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
   mode,
   preset,
   speed,
+  easingPreset = 'ease-out',
+  customBezier,
   className,
 }) => {
   const frame = useCurrentFrame();
@@ -39,6 +43,25 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
   const tokens = splitText(children, mode);
   const { stagger, duration } = speedConfig[speed];
   const startFrame = 8;
+
+  const getEasingFn = () => {
+    switch (easingPreset) {
+      case 'linear': return Easing.linear;
+      case 'ease-in': return Easing.in(Easing.cubic);
+      case 'ease-out': return Easing.out(Easing.cubic);
+      case 'ease-in-out': return Easing.inOut(Easing.cubic);
+      case 'bounce': return Easing.bounce;
+      case 'elastic': return Easing.elastic(Easing.ease);
+      case 'back': return Easing.back(Easing.ease);
+      case 'spring': return Easing.out(Easing.cubic);
+      case 'custom': {
+        if (customBezier) return Easing.bezier(customBezier.x1, customBezier.y1, customBezier.x2, customBezier.y2);
+        return Easing.out(Easing.cubic);
+      }
+      default: return Easing.out(Easing.cubic);
+    }
+  };
+  const easingFn = getEasingFn();
 
   return (
     <>
@@ -53,7 +76,7 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
 
         const tokenStart = startFrame + index * stagger;
         const progress = interpolate(frame, [tokenStart, tokenStart + duration], [0, 1], {
-          easing: Easing.out(Easing.cubic),
+          easing: easingFn,
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });

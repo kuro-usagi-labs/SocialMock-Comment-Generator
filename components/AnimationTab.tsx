@@ -109,6 +109,15 @@ const formatTime = (frame: number, fps: number) => {
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 };
 
+const BezierInput: React.FC<{ label: string; value: number; onChange: (v: number) => void }> = ({ label, value, onChange }) => (
+  <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
+    <span>{label}</span>
+    <input type="number" step="0.05" min="-2" max="2" value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
+  </label>
+);
+
 export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, isExportingVideo, videoExportFormat, playerRef }) => {
   const durationInFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
   const fps = 60;
@@ -428,16 +437,16 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
                     <Activity size={16} />
-                    Easing Curve
+                    Easing In
                   </span>
                   <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600 capitalize">
-                    {easingOptions.find(o => o.value === (config.easingPreset || 'ease-out'))?.label}
+                    {easingOptions.find(o => o.value === (config.easingInPreset || 'ease-out'))?.label}
                   </span>
                 </div>
                 <select
-                  value={config.easingPreset || 'ease-out'}
+                  value={config.easingInPreset || 'ease-out'}
                   onChange={(event) => {
-                    update('easingPreset', event.target.value);
+                    update('easingInPreset', event.target.value);
                     playerRef.current?.seekTo(0);
                     playerRef.current?.play();
                   }}
@@ -447,49 +456,73 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-                {(config.easingPreset === 'custom') && (
-                  <div className="mt-3 space-y-2">
+                {(config.easingInPreset === 'custom') && (
+                  <div className="mt-3">
                     <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-600">
-                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
-                        <span>x1</span>
-                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.x1 ?? 0.42}
-                          onChange={(e) => {
-                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
-                            update('customBezier', { ...cb, x1: Number(e.target.value) });
-                          }}
-                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                      </label>
-                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
-                        <span>y1</span>
-                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.y1 ?? 0}
-                          onChange={(e) => {
-                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
-                            update('customBezier', { ...cb, y1: Number(e.target.value) });
-                          }}
-                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                      </label>
-                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
-                        <span>x2</span>
-                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.x2 ?? 0.58}
-                          onChange={(e) => {
-                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
-                            update('customBezier', { ...cb, x2: Number(e.target.value) });
-                          }}
-                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                      </label>
-                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
-                        <span>y2</span>
-                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.y2 ?? 1}
-                          onChange={(e) => {
-                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
-                            update('customBezier', { ...cb, y2: Number(e.target.value) });
-                          }}
-                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                      </label>
+                      <BezierInput label="x1" value={config.customBezierIn?.x1 ?? 0.42} onChange={(v) => {
+                        const cb = config.customBezierIn || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierIn', { ...cb, x1: v });
+                      }} />
+                      <BezierInput label="y1" value={config.customBezierIn?.y1 ?? 0} onChange={(v) => {
+                        const cb = config.customBezierIn || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierIn', { ...cb, y1: v });
+                      }} />
+                      <BezierInput label="x2" value={config.customBezierIn?.x2 ?? 0.58} onChange={(v) => {
+                        const cb = config.customBezierIn || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierIn', { ...cb, x2: v });
+                      }} />
+                      <BezierInput label="y2" value={config.customBezierIn?.y2 ?? 1} onChange={(v) => {
+                        const cb = config.customBezierIn || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierIn', { ...cb, y2: v });
+                      }} />
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      Cubic-bezier control points (e.g. ease.io: 0.42, 0, 0.58, 1)
-                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="glass-card rounded-lg p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <Activity size={16} />
+                    Easing Out
+                  </span>
+                  <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600 capitalize">
+                    {easingOptions.find(o => o.value === (config.easingOutPreset || 'ease-in'))?.label}
+                  </span>
+                </div>
+                <select
+                  value={config.easingOutPreset || 'ease-in'}
+                  onChange={(event) => {
+                    update('easingOutPreset', event.target.value);
+                    playerRef.current?.seekTo(Math.max(0, durationInFrames - 50));
+                    playerRef.current?.play();
+                  }}
+                  className="glass-input h-11 w-full cursor-pointer rounded-lg px-3 text-sm font-bold text-slate-800 outline-none transition focus:ring-2 focus:ring-indigo-500/40"
+                >
+                  {easingOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                {(config.easingOutPreset === 'custom') && (
+                  <div className="mt-3">
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-600">
+                      <BezierInput label="x1" value={config.customBezierOut?.x1 ?? 0.42} onChange={(v) => {
+                        const cb = config.customBezierOut || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierOut', { ...cb, x1: v });
+                      }} />
+                      <BezierInput label="y1" value={config.customBezierOut?.y1 ?? 0} onChange={(v) => {
+                        const cb = config.customBezierOut || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierOut', { ...cb, y1: v });
+                      }} />
+                      <BezierInput label="x2" value={config.customBezierOut?.x2 ?? 0.58} onChange={(v) => {
+                        const cb = config.customBezierOut || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierOut', { ...cb, x2: v });
+                      }} />
+                      <BezierInput label="y2" value={config.customBezierOut?.y2 ?? 1} onChange={(v) => {
+                        const cb = config.customBezierOut || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                        update('customBezierOut', { ...cb, y2: v });
+                      }} />
+                    </div>
                   </div>
                 )}
               </div>

@@ -59,8 +59,10 @@ export interface CommentConfig {
   animationSpeed: AnimationSpeed;
   animationDuration: number;
   animationLoop: AnimationLoop;
-  easingPreset: EasingPreset;
-  customBezier?: BezierPoints;
+  easingInPreset: EasingPreset;
+  easingOutPreset: EasingPreset;
+  customBezierIn?: BezierPoints;
+  customBezierOut?: BezierPoints;
   bulkStagger: number; // seconds between bulk messages
   greenscreen: boolean;
   textAnimationMode: TextAnimationMode;
@@ -106,7 +108,8 @@ export const INITIAL_CONFIG: CommentConfig = {
   animationSpeed: 'medium',
   animationDuration: 2,
   animationLoop: 'loop',
-  easingPreset: 'ease-out',
+  easingInPreset: 'ease-out',
+  easingOutPreset: 'ease-in',
   bulkStagger: 0.4,
   greenscreen: false,
   textAnimationMode: 'word',

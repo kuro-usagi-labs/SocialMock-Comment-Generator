@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCurrentFrame, useVideoConfig, spring, interpolate, Easing } from 'remotion';
-import { AnimationStyle, CommentConfig, BulkMessage } from '../../types';
+import { AnimationStyle, CommentConfig, BulkMessage, EasingPreset, BezierPoints } from '../../types';
 import FacebookCard from '../FacebookCard';
 import YouTubeCard from '../YouTubeCard';
 import TikTokCard from '../TikTokCard';
@@ -132,9 +132,8 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
   }
   // 'once' and 'loop' use frame as-is (Remotion Player handles looping)
 
-  // ── Easing Selection ────────────────────────────────────
-  const getEasingFn = () => {
-    const preset = overriddenConfig.easingPreset || 'ease-out';
+  // ── Easing Selection (separate for In and Out) ─────────────
+  const getEasingFn = (preset: EasingPreset, bezier?: BezierPoints) => {
     switch (preset) {
       case 'linear': return Easing.linear;
       case 'ease-in': return Easing.in(Easing.cubic);
@@ -143,28 +142,28 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
       case 'bounce': return Easing.bounce;
       case 'elastic': return Easing.elastic(Easing.ease);
       case 'back': return Easing.back(Easing.ease);
-      case 'spring': return Easing.out(Easing.cubic); // spring uses spring() not easing
+      case 'spring': return Easing.out(Easing.cubic);
       case 'custom': {
-        const cb = overriddenConfig.customBezier;
-        if (cb) return Easing.bezier(cb.x1, cb.y1, cb.x2, cb.y2);
+        if (bezier) return Easing.bezier(bezier.x1, bezier.y1, bezier.x2, bezier.y2);
         return Easing.out(Easing.cubic);
       }
       default: return Easing.out(Easing.cubic);
     }
   };
-  const easingFn = getEasingFn();
+  const easingInFn = getEasingFn(overriddenConfig.easingInPreset || 'ease-out', overriddenConfig.customBezierIn);
+  const easingOutFn = getEasingFn(overriddenConfig.easingOutPreset || 'ease-in', overriddenConfig.customBezierOut);
 
   const inProgress = animationInStyle === 'none'
     ? 1
     : interpolate(effectiveFrame, [0, inFrames], [0, 1], {
-      easing: easingFn,
+      easing: easingInFn,
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
   const outProgress = animationOutStyle === 'none'
     ? 0
     : interpolate(effectiveFrame, [outStartFrame, durationInFrames - 1], [0, 1], {
-      easing: easingFn,
+      easing: easingOutFn,
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
@@ -192,6 +191,8 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
       mode={overriddenConfig.textAnimationMode}
       preset={overriddenConfig.textAnimationPreset}
       speed={overriddenConfig.animationSpeed || 'medium'}
+      easingPreset={overriddenConfig.easingInPreset || 'ease-out'}
+      customBezier={overriddenConfig.customBezierIn}
     >
       {overriddenConfig.content}
     </AnimatedText>
