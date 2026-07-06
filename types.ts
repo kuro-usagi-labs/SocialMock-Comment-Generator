@@ -4,7 +4,7 @@ export type CardWidth = number;
 export type PaddingSize = 'compact' | 'normal' | 'spacious';
 export type BackgroundType = 'transparent' | 'solid' | 'gradient';
 export type DmStyle = 'instagram' | 'whatsapp' | 'imessage';
-export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'fade-scale' | 'elastic-spin' | 'flip-in';
+export type AnimationStyle = 'none' | 'pop' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'fade-scale' | 'elastic-spin' | 'flip-in' | 'bounce-in' | 'rubber-band' | 'shake' | 'wiggle' | 'zoom-blur' | 'rotate-in' | 'swipe-in' | 'glitch';
 export type AnimationSpeed = 'slow' | 'medium' | 'fast';
 export type VideoExportFormat = 'mp4' | 'mov' | 'gif' | 'webm';
 export type ExportResolution = '720p' | '1080p' | '2k' | '4k';
@@ -14,7 +14,10 @@ export type TextTemplate = 'subtitle' | 'hook' | 'lower-third' | 'quote' | 'stic
 export type TextFont = 'inter' | 'outfit' | 'system';
 export type TextWeight = 'regular' | 'medium' | 'bold' | 'black';
 export type TextAlign = 'left' | 'center' | 'right';
-export type TextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+export type EasingPreset = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce' | 'elastic' | 'back' | 'spring' | 'custom';
+export type AnimationLoop = 'once' | 'loop' | 'ping-pong';
+
+export interface BezierPoints { x1: number; y1: number; x2: number; y2: number; }
 
 export interface BulkMessage {
   id: string;
@@ -55,6 +58,10 @@ export interface CommentConfig {
   animationOutStyle: AnimationStyle;
   animationSpeed: AnimationSpeed;
   animationDuration: number;
+  animationLoop: AnimationLoop;
+  easingPreset: EasingPreset;
+  customBezier?: BezierPoints;
+  bulkStagger: number; // seconds between bulk messages
   greenscreen: boolean;
   textAnimationMode: TextAnimationMode;
   textAnimationPreset: TextAnimationPreset;
@@ -98,6 +105,9 @@ export const INITIAL_CONFIG: CommentConfig = {
   animationOutStyle: 'fade-scale',
   animationSpeed: 'medium',
   animationDuration: 2,
+  animationLoop: 'loop',
+  easingPreset: 'ease-out',
+  bulkStagger: 0.4,
   greenscreen: false,
   textAnimationMode: 'word',
   textAnimationPreset: 'fade-up',

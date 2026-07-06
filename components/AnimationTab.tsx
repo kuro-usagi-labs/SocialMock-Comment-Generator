@@ -12,7 +12,7 @@ import {
   TextWeight,
   VideoExportFormat,
 } from '../types';
-import { Video, Maximize, Play, Download, Loader2, Layers, Gauge, Timer, Pause, RotateCcw } from 'lucide-react';
+import { Video, Maximize, Play, Download, Loader2, Layers, Gauge, Timer, Pause, RotateCcw, Repeat, Activity } from 'lucide-react';
 
 interface Props {
   config: CommentConfig;
@@ -26,13 +26,39 @@ interface Props {
 const animationOptions: Array<{ value: AnimationStyle; label: string }> = [
   { value: 'none', label: 'No Animation' },
   { value: 'pop', label: 'Pop In (Bouncy)' },
+  { value: 'fade-scale', label: 'Fade & Scale' },
+  { value: 'elastic-spin', label: 'Elastic Spin' },
+  { value: 'flip-in', label: 'Flip In' },
   { value: 'slide-up', label: 'Slide Up' },
   { value: 'slide-down', label: 'Slide Down' },
   { value: 'slide-left', label: 'Slide Left' },
   { value: 'slide-right', label: 'Slide Right' },
-  { value: 'fade-scale', label: 'Fade & Scale' },
-  { value: 'elastic-spin', label: 'Elastic Spin' },
-  { value: 'flip-in', label: 'Flip In' },
+  { value: 'bounce-in', label: 'Bounce In' },
+  { value: 'rubber-band', label: 'Rubber Band' },
+  { value: 'shake', label: 'Shake' },
+  { value: 'wiggle', label: 'Wiggle' },
+  { value: 'zoom-blur', label: 'Zoom Blur' },
+  { value: 'rotate-in', label: 'Rotate In' },
+  { value: 'swipe-in', label: 'Swipe In' },
+  { value: 'glitch', label: 'Glitch' },
+];
+
+const loopOptions: Array<{ value: 'once' | 'loop' | 'ping-pong'; label: string }> = [
+  { value: 'once', label: 'Once' },
+  { value: 'loop', label: 'Loop' },
+  { value: 'ping-pong', label: 'Ping-Pong' },
+];
+
+const easingOptions: Array<{ value: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce' | 'elastic' | 'back' | 'spring' | 'custom'; label: string }> = [
+  { value: 'linear', label: 'Linear' },
+  { value: 'ease-out', label: 'Ease Out' },
+  { value: 'ease-in', label: 'Ease In' },
+  { value: 'ease-in-out', label: 'Ease In-Out' },
+  { value: 'bounce', label: 'Bounce' },
+  { value: 'elastic', label: 'Elastic' },
+  { value: 'back', label: 'Back' },
+  { value: 'spring', label: 'Spring' },
+  { value: 'custom', label: 'Custom Bezier...' },
 ];
 
 const speedOptions: Array<{ value: AnimationSpeed; label: string }> = [
@@ -358,6 +384,114 @@ export const AnimationTab: React.FC<Props> = ({ config, update, onExportVideo, i
                   }}
                   className="w-full accent-indigo-600"
                 />
+              </div>
+              <div className="glass-card rounded-lg p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <Repeat size={16} />
+                    Loop Mode
+                  </span>
+                  <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600 capitalize">
+                    {loopOptions.find(o => o.value === (config.animationLoop || 'loop'))?.label}
+                  </span>
+                </div>
+                <div className="segmented-control grid grid-cols-3">
+                  {loopOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        update('animationLoop', opt.value);
+                        playerRef.current?.seekTo(0);
+                        playerRef.current?.play();
+                      }}
+                      className={`segmented-btn ${
+                        (config.animationLoop || 'loop') === opt.value
+                          ? 'segmented-btn-active'
+                          : 'segmented-btn-inactive'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] font-medium leading-relaxed text-slate-500">
+                  {config.animationLoop === 'once'
+                    ? 'Plays once then stops at final frame.'
+                    : config.animationLoop === 'ping-pong'
+                      ? 'Plays forward then reverse, alternately.'
+                      : 'Restarts from frame 0 each cycle.'}
+                </p>
+              </div>
+
+              <div className="glass-card rounded-lg p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <Activity size={16} />
+                    Easing Curve
+                  </span>
+                  <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-indigo-600 capitalize">
+                    {easingOptions.find(o => o.value === (config.easingPreset || 'ease-out'))?.label}
+                  </span>
+                </div>
+                <select
+                  value={config.easingPreset || 'ease-out'}
+                  onChange={(event) => {
+                    update('easingPreset', event.target.value);
+                    playerRef.current?.seekTo(0);
+                    playerRef.current?.play();
+                  }}
+                  className="glass-input h-11 w-full cursor-pointer rounded-lg px-3 text-sm font-bold text-slate-800 outline-none transition focus:ring-2 focus:ring-indigo-500/40"
+                >
+                  {easingOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                {(config.easingPreset === 'custom') && (
+                  <div className="mt-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-600">
+                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
+                        <span>x1</span>
+                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.x1 ?? 0.42}
+                          onChange={(e) => {
+                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                            update('customBezier', { ...cb, x1: Number(e.target.value) });
+                          }}
+                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
+                      </label>
+                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
+                        <span>y1</span>
+                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.y1 ?? 0}
+                          onChange={(e) => {
+                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                            update('customBezier', { ...cb, y1: Number(e.target.value) });
+                          }}
+                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
+                      </label>
+                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
+                        <span>x2</span>
+                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.x2 ?? 0.58}
+                          onChange={(e) => {
+                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                            update('customBezier', { ...cb, x2: Number(e.target.value) });
+                          }}
+                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
+                      </label>
+                      <label className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
+                        <span>y2</span>
+                        <input type="number" step="0.05" min="-2" max="2" value={config.customBezier?.y2 ?? 1}
+                          onChange={(e) => {
+                            const cb = config.customBezier || { x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
+                            update('customBezier', { ...cb, y2: Number(e.target.value) });
+                          }}
+                          className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-[11px]" />
+                      </label>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Cubic-bezier control points (e.g. ease.io: 0.42, 0, 0.58, 1)
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
