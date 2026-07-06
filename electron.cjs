@@ -53,19 +53,37 @@ let cachedBundlePath = null;
 /**
  * Create or reuse a Remotion webpack bundle.
  * This is the composition entry point that renderMedia() will use.
+ * 
+ * In production (ASAR), __dirname is read-only. We write generated files
+ * to a temp directory and use webpack aliases to resolve imports.
  */
 async function getOrCreateBundle() {
   if (cachedBundlePath) return cachedBundlePath;
 
   const { bundle } = require('@remotion/bundler');
-  const entryPoint = path.join(__dirname, 'remotion.index.ts');
+  
+  // In production ASAR, __dirname points inside the archive (read-only).
+  // We need the unpacked path for reading, and a temp dir for writing.
+  const appDir = __dirname;
+  const unpackedDir = app.isPackaged 
+    ? appDir.replace('app.asar', 'app.asar.unpacked') 
+    : appDir;
+  
+  const entryPoint = path.join(appDir, 'remotion.index.ts');
 
-  // Copy pre-compiled CSS from Vite build output to remotion-styles.css
-  // Rewrite font URLs to absolute paths so they resolve in Remotion's context
-  const distAssetsDir = path.join(__dirname, 'dist', 'assets');
-  const remotionStylesPath = path.join(__dirname, 'remotion-styles.css');
+  // Create a writable temp directory for generated files
+  const remotionTmpDir = path.join(os.tmpdir(), 'socialmock-remotion');
+  if (!fs.existsSync(remotionTmpDir)) {
+    fs.mkdirSync(remotionTmpDir, { recursive: true });
+  }
+
+  // Copy pre-compiled CSS from Vite build output
+  // Rewrite font URLs to absolute paths so they resolve in Remotion's headless browser
+  const distAssetsDir = path.join(appDir, 'dist', 'assets');
+  const remotionStylesPath = path.join(remotionTmpDir, 'remotion-styles.css');
   
   try {
+    // Read CSS from dist (inside ASAR is fine for reading)
     const cssFiles = fs.readdirSync(distAssetsDir).filter(f => f.endsWith('.css'));
     if (cssFiles.length > 0) {
       let cssContent = cssFiles
@@ -73,7 +91,7 @@ async function getOrCreateBundle() {
         .join('\n');
       
       // Rewrite relative font URLs to absolute file:// paths
-      // Vite outputs urls like: url(./inter-latin-wght-normal-Dx4kXJAl.woff2)
+      // In ASAR, the dist/assets dir is still readable for fonts
       const absoluteAssetsDir = distAssetsDir.replace(/\\/g, '/');
       cssContent = cssContent.replace(
         /url\(\.\/([\w.-]+\.woff2?)\)/g,
@@ -81,13 +99,14 @@ async function getOrCreateBundle() {
       );
       
       fs.writeFileSync(remotionStylesPath, cssContent);
-      console.log('[Remotion] Copied pre-compiled CSS with absolute font paths');
+      console.log('[Remotion] CSS written to:', remotionStylesPath);
     } else {
       fs.writeFileSync(remotionStylesPath, '/* No pre-compiled CSS found */');
       console.warn('[Remotion] No CSS files found in dist/assets');
     }
   } catch (e) {
     console.warn('[Remotion] Could not copy CSS:', e.message);
+    // Write a minimal empty CSS so the import doesn't fail
     fs.writeFileSync(remotionStylesPath, '/* CSS copy failed */');
   }
 
@@ -112,7 +131,9 @@ async function getOrCreateBundle() {
           ...config.resolve,
           alias: {
             ...(config.resolve?.alias || {}),
-            '@': __dirname,
+            '@': appDir,
+            // Map the CSS import to the temp file we wrote
+            './remotion-styles.css': remotionStylesPath,
           },
         },
       };
