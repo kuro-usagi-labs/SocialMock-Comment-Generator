@@ -51,39 +51,101 @@ function createWindow() {
 let cachedBundlePath = null;
 
 /**
+ * Recursively copy a directory, handling ASAR transparently.
+ * Node's fs module can read from ASAR, so we just read + write to real fs.
+ */
+function copyDirSync(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
  * Create or reuse a Remotion webpack bundle.
- * This is the composition entry point that renderMedia() will use.
  * 
- * In production (ASAR), __dirname is read-only. We write generated files
- * to a temp directory and use webpack aliases to resolve imports.
+ * In production, the app is packaged inside an ASAR archive (read-only).
+ * The Remotion bundler internally does chdir() to the entry point's directory,
+ * which fails inside ASAR. Solution: copy all needed source files to a writable
+ * temp directory and bundle from there.
  */
 async function getOrCreateBundle() {
   if (cachedBundlePath) return cachedBundlePath;
 
   const { bundle } = require('@remotion/bundler');
   
-  // In production ASAR, __dirname points inside the archive (read-only).
-  // We need the unpacked path for reading, and a temp dir for writing.
   const appDir = __dirname;
-  const unpackedDir = app.isPackaged 
-    ? appDir.replace('app.asar', 'app.asar.unpacked') 
-    : appDir;
-  
-  const entryPoint = path.join(appDir, 'remotion.index.ts');
+  const isPackaged = app.isPackaged;
 
-  // Create a writable temp directory for generated files
-  const remotionTmpDir = path.join(os.tmpdir(), 'socialmock-remotion');
-  if (!fs.existsSync(remotionTmpDir)) {
-    fs.mkdirSync(remotionTmpDir, { recursive: true });
+  // Create a writable workspace for Remotion bundler
+  const remotionWorkDir = path.join(os.tmpdir(), 'socialmock-remotion-workspace');
+  
+  // Clean and recreate to ensure fresh files
+  if (fs.existsSync(remotionWorkDir)) {
+    fs.rmSync(remotionWorkDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(remotionWorkDir, { recursive: true });
+
+  // Copy all source files needed for Remotion bundling from ASAR to temp dir
+  const filesToCopy = [
+    'remotion.index.ts',
+    'remotion-env.d.ts',
+    'RemotionRoot.tsx',
+    'types.ts',
+    'tsconfig.json',
+    'package.json',
+  ];
+  
+  for (const file of filesToCopy) {
+    const src = path.join(appDir, file);
+    const dest = path.join(remotionWorkDir, file);
+    try {
+      fs.copyFileSync(src, dest);
+    } catch (e) {
+      console.warn(`[Remotion] Could not copy ${file}:`, e.message);
+    }
   }
 
-  // Copy pre-compiled CSS from Vite build output
-  // Rewrite font URLs to absolute paths so they resolve in Remotion's headless browser
-  const distAssetsDir = path.join(appDir, 'dist', 'assets');
-  const remotionStylesPath = path.join(remotionTmpDir, 'remotion-styles.css');
+  // Copy component directories
+  const dirsToCopy = ['components'];
+  for (const dir of dirsToCopy) {
+    const src = path.join(appDir, dir);
+    const dest = path.join(remotionWorkDir, dir);
+    try {
+      copyDirSync(src, dest);
+    } catch (e) {
+      console.warn(`[Remotion] Could not copy ${dir}/:`, e.message);
+    }
+  }
+
+  // Create node_modules symlink or copy — the bundler needs remotion packages
+  // Symlink to the real (unpacked) node_modules to avoid massive copy
+  const realNodeModules = isPackaged
+    ? path.join(appDir.replace('app.asar', 'app.asar.unpacked'), 'node_modules')
+    : path.join(appDir, 'node_modules');
+  const workNodeModules = path.join(remotionWorkDir, 'node_modules');
   
   try {
-    // Read CSS from dist (inside ASAR is fine for reading)
+    // Use junction on Windows (doesn't require admin privileges)
+    fs.symlinkSync(realNodeModules, workNodeModules, 'junction');
+    console.log('[Remotion] Symlinked node_modules from:', realNodeModules);
+  } catch (e) {
+    console.warn('[Remotion] Symlink failed, copying node_modules:', e.message);
+    // Fallback: just point webpack resolve to it via alias
+  }
+
+  // Generate remotion-styles.css from pre-compiled Vite CSS
+  const distAssetsDir = path.join(appDir, 'dist', 'assets');
+  const remotionStylesPath = path.join(remotionWorkDir, 'remotion-styles.css');
+  
+  try {
     const cssFiles = fs.readdirSync(distAssetsDir).filter(f => f.endsWith('.css'));
     if (cssFiles.length > 0) {
       let cssContent = cssFiles
@@ -91,7 +153,6 @@ async function getOrCreateBundle() {
         .join('\n');
       
       // Rewrite relative font URLs to absolute file:// paths
-      // In ASAR, the dist/assets dir is still readable for fonts
       const absoluteAssetsDir = distAssetsDir.replace(/\\/g, '/');
       cssContent = cssContent.replace(
         /url\(\.\/([\w.-]+\.woff2?)\)/g,
@@ -101,16 +162,18 @@ async function getOrCreateBundle() {
       fs.writeFileSync(remotionStylesPath, cssContent);
       console.log('[Remotion] CSS written to:', remotionStylesPath);
     } else {
-      fs.writeFileSync(remotionStylesPath, '/* No pre-compiled CSS found */');
+      fs.writeFileSync(remotionStylesPath, '');
       console.warn('[Remotion] No CSS files found in dist/assets');
     }
   } catch (e) {
-    console.warn('[Remotion] Could not copy CSS:', e.message);
-    // Write a minimal empty CSS so the import doesn't fail
-    fs.writeFileSync(remotionStylesPath, '/* CSS copy failed */');
+    console.warn('[Remotion] Could not generate CSS:', e.message);
+    fs.writeFileSync(remotionStylesPath, '');
   }
 
-  console.log('[Remotion] Bundling entry point:', entryPoint);
+  // Bundle from the writable temp directory
+  const entryPoint = path.join(remotionWorkDir, 'remotion.index.ts');
+  console.log('[Remotion] Bundling from workspace:', remotionWorkDir);
+
   cachedBundlePath = await bundle({
     entryPoint,
     webpackOverride: (config) => {
@@ -120,7 +183,6 @@ async function getOrCreateBundle() {
           ...config.module,
           rules: [
             ...(config.module?.rules || []),
-            // Handle font files (woff2, etc.) used by @fontsource
             {
               test: /\.(woff|woff2|eot|ttf|otf)$/,
               type: 'asset/resource',
@@ -131,9 +193,7 @@ async function getOrCreateBundle() {
           ...config.resolve,
           alias: {
             ...(config.resolve?.alias || {}),
-            '@': appDir,
-            // Map the CSS import to the temp file we wrote
-            './remotion-styles.css': remotionStylesPath,
+            '@': remotionWorkDir,
           },
         },
       };
