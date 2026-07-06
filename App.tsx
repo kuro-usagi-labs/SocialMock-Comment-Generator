@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { toPng, toBlob } from 'html-to-image';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { toBlob } from 'html-to-image';
 import { Copy, Download, Loader2, MessageCircle, Minus, PackageCheck, Plus, RotateCcw } from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaTiktok, FaXTwitter, FaYoutube } from 'react-icons/fa6';
 import { Toaster, toast } from 'sonner';
@@ -11,8 +11,7 @@ import TwitterCard from './components/TwitterCard';
 import InstagramCard from './components/InstagramCard';
 import BubbleChatCard from './components/BubbleChatCard';
 import TextOverlayCard from './components/TextOverlayCard';
-import { PlayerRef, Thumbnail } from '@remotion/player';
-import { MainComposition } from './components/remotion/Composition';
+import { PlayerRef } from '@remotion/player';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { AnimationTab } from './components/AnimationTab';
@@ -45,8 +44,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'canvas' | 'animation'>('canvas');
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [videoExportFormat, setVideoExportFormat] = useState<VideoExportFormat>('mp4');
-  const [exportFrame, setExportFrame] = useState(0);
-  const [exportTotalFrames, setExportTotalFrames] = useState(120);
+  const [renderProgress, setRenderProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
   
   const playerRef = useRef<PlayerRef>(null);
 
@@ -166,56 +164,55 @@ const App: React.FC = () => {
     }
   }, [config.bulkMessages, config.platform, config.dmStyle]);
 
+  // Listen for render progress updates from Electron main process
+  useEffect(() => {
+    if (!window.electronAPI?.onRenderProgress) return;
+    const cleanup = window.electronAPI.onRenderProgress((data: { progress: number; stage: string }) => {
+      setRenderProgress(data);
+    });
+    return cleanup;
+  }, []);
+
   const handleExportVideo = useCallback(async (format: VideoExportFormat) => {
     setVideoExportFormat(format);
     setIsExportingVideo(true);
+    setRenderProgress({ progress: 0, stage: 'Starting...' });
     try {
-      if (window.electronAPI && window.electronAPI.startVideoExport && playerRef.current) {
-        toast.info(`Preparing frames for ${format.toUpperCase()}...`);
+      if (window.electronAPI?.renderVideo) {
+        // New Remotion native rendering pipeline
+        toast.info(`Rendering ${format.toUpperCase()} with Remotion...`);
+        const durationInFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
         
-        await window.electronAPI.startVideoExport();
-        const totalFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
-        setExportTotalFrames(totalFrames);
-        
-        for (let f = 0; f < totalFrames; f++) {
-          setExportFrame(f);
-          
-          // Allow React and Remotion to re-render the Thumbnail
-          await new Promise(r => setTimeout(r, 60));
-          
-          const container = document.getElementById('export-container');
-          if (!container) throw new Error('Export container not found');
+        const result = await window.electronAPI.renderVideo({
+          config,
+          format,
+          fps: 60,
+          durationInFrames,
+        });
 
-          const dataUrl = await toPng(container, {
-            pixelRatio: 1, // Native 1080x1080
-            cacheBust: true,
-          });
-          
-          await window.electronAPI.sendFrame(f, dataUrl);
-        }
-
-        toast.info('Stitching frames with FFMPEG...');
-        const result = await window.electronAPI.finishVideo(format);
-        
         if (result.success) {
           toast.success(`${format.toUpperCase()} exported successfully!`);
         } else if (!result.canceled) {
-          toast.error('Failed to encode video.');
+          toast.error(result.error || 'Failed to render video.');
         }
+      } else if (window.electronAPI?.startVideoExport) {
+        // Legacy fallback for older builds
+        toast.error('Legacy export not supported. Please update the app.');
       } else {
         toast.error('Video export is only supported in the desktop app.');
       }
     } catch (e) {
       console.error(e);
-      toast.error('Render failed.');
+      toast.error('Render failed: ' + (e instanceof Error ? e.message : 'Unknown error'));
     } finally {
       setIsExportingVideo(false);
+      setRenderProgress({ progress: 0, stage: '' });
     }
-  }, [config.animationDuration]);
+  }, [config]);
 
   const hasBulkMessages = config.bulkMessages.length > 0;
   const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
-  const videoExportConfig = videoExportFormat === 'mov' ? { ...config, greenscreen: false } : config;
+
 
   const applyBulkMessageToConfig = (message?: BulkMessage): CommentConfig => {
     if (!message) return config;
@@ -471,41 +468,20 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Hidden high-res export container */}
+      {/* Rendering overlay — Remotion renders in background via Electron */}
       {isExportingVideo && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden bg-slate-900">
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden bg-slate-900/95 backdrop-blur-sm">
           <div className="relative z-10 flex flex-col items-center">
             <Loader2 className="mb-4 animate-spin text-indigo-400" size={48} />
             <h2 className="text-xl font-bold text-white">Rendering {videoExportFormat.toUpperCase()}...</h2>
-            <p className="mt-2 text-slate-400">Frame {exportFrame + 1} of {exportTotalFrames}</p>
-            <div className="mt-6 h-2 w-64 overflow-hidden rounded-full bg-slate-800">
+            <p className="mt-2 text-sm text-slate-400">{renderProgress.stage || 'Preparing...'}</p>
+            <div className="mt-6 h-2.5 w-72 overflow-hidden rounded-full bg-slate-800">
               <div 
-                className="h-full bg-indigo-500 transition-all duration-75" 
-                style={{ width: `${((exportFrame + 1) / exportTotalFrames) * 100}%` }}
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300" 
+                style={{ width: `${Math.round(renderProgress.progress * 100)}%` }}
               />
             </div>
-          </div>
-          
-          {/* 
-            The actual 1080x1080 container for html-to-image. 
-            We place it offscreen visually using fixed positioning, but NOT display: none 
-            so html-to-image can still read its dimensions and content accurately.
-          */}
-          <div 
-            className="fixed" 
-            style={{ left: '-9999px', top: '-9999px', width: 1080, height: 1080 }}
-          >
-            <div id="export-container" style={{ width: 1080, height: 1080, backgroundColor: videoExportConfig.greenscreen ? '#00FF00' : 'transparent', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <Thumbnail
-                component={MainComposition}
-                compositionWidth={1080}
-                compositionHeight={1080}
-                frameToDisplay={exportFrame}
-                durationInFrames={exportTotalFrames}
-                fps={60}
-                inputProps={{ config: videoExportConfig, message: undefined }}
-              />
-            </div>
+            <p className="mt-3 text-xs font-medium text-slate-500">{Math.round(renderProgress.progress * 100)}%</p>
           </div>
         </div>
       )}

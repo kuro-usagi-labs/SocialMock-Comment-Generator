@@ -17,6 +17,7 @@
     "@chatscope/chat-ui-kit-react": "^2.1.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/outfit": "^5.2.8",
+    "@remotion/bundler": "^4.0.484",
     "@remotion/player": "^4.0.484",
     "@remotion/renderer": "^4.0.484",
     "dom-to-image-more": "^3.7.2",
@@ -58,10 +59,24 @@
       "electron.cjs",
       "preload.cjs",
       "package.json",
-      "node_modules/ffmpeg-static/**/*"
+      "remotion.index.ts",
+      "remotion-env.d.ts",
+      "electron.d.ts",
+      "RemotionRoot.tsx",
+      "components/**/*",
+      "types.ts",
+      "tsconfig.json",
+      "index.css",
+      "utils/**/*",
+      "services/**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/@remotion/**/*",
+      "node_modules/remotion/**/*"
     ],
     "asarUnpack": [
-      "node_modules/ffmpeg-static/**/*"
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/@remotion/**/*",
+      "node_modules/remotion/**/*"
     ],
     "win": {
       "target": [
