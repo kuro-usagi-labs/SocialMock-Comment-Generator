@@ -375,10 +375,13 @@ ipcMain.handle('render-video', async (event, options) => {
       }
 
       // Encode with explicit alpha channel preservation
+      // Remotion renderFrames outputs: element-000.png, element-001.png, etc.
+      const padLength = String(durationInFrames - 1).length;
+      const framePattern = `element-%0${padLength}d.png`;
       const ffmpegArgs = [
         '-y',
         '-framerate', String(fps),
-        '-i', path.join(framesDir, 'element-0-frame%d.png'),
+        '-i', path.join(framesDir, framePattern),
         '-c:v', 'prores_ks',
         '-profile:v', '4444',
         '-pix_fmt', 'yuva444p10le',
