@@ -134,20 +134,20 @@ async function getOrCreateBundle() {
     }
   }
 
-  // Create node_modules symlink or copy — the bundler needs remotion packages
-  // Symlink to the real (unpacked) node_modules to avoid massive copy
-  const realNodeModules = isPackaged
+  // Create node_modules symlink — point to ASAR node_modules (readable by webpack).
+  // ASAR is read-only for chdir/spawn but webpack can read files from it just fine.
+  const asarNodeModules = path.join(appDir, 'node_modules');
+  const unpackedNodeModules = isPackaged
     ? path.join(appDir.replace('app.asar', 'app.asar.unpacked'), 'node_modules')
-    : path.join(appDir, 'node_modules');
+    : null;
   const workNodeModules = path.join(remotionWorkDir, 'node_modules');
   
   try {
     // Use junction on Windows (doesn't require admin privileges)
-    fs.symlinkSync(realNodeModules, workNodeModules, 'junction');
-    console.log('[Remotion] Symlinked node_modules from:', realNodeModules);
+    fs.symlinkSync(asarNodeModules, workNodeModules, 'junction');
+    console.log('[Remotion] Symlinked node_modules from:', asarNodeModules);
   } catch (e) {
-    console.warn('[Remotion] Symlink failed, copying node_modules:', e.message);
-    // Fallback: just point webpack resolve to it via alias
+    console.warn('[Remotion] Symlink failed:', e.message);
   }
 
   // Generate remotion-styles.css from pre-compiled Vite CSS
@@ -183,6 +183,11 @@ async function getOrCreateBundle() {
   const entryPoint = path.join(remotionWorkDir, 'remotion.index.ts');
   console.log('[Remotion] Bundling from workspace:', remotionWorkDir);
 
+  // Build resolve.modules list: workspace first, then ASAR (all packages), then unpacked (native binaries)
+  const resolveModules = ['node_modules'];
+  resolveModules.push(asarNodeModules);
+  if (unpackedNodeModules) resolveModules.push(unpackedNodeModules);
+
   cachedBundlePath = await bundle({
     entryPoint,
     webpackOverride: (config) => {
@@ -200,6 +205,7 @@ async function getOrCreateBundle() {
         },
         resolve: {
           ...config.resolve,
+          modules: resolveModules,
           alias: {
             ...(config.resolve?.alias || {}),
             '@': remotionWorkDir,
