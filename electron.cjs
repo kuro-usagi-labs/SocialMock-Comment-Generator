@@ -306,6 +306,7 @@ ipcMain.handle('render-video', async (event, options) => {
       inputProps: { config },
       ...(isMov && { proresProfile }),
       pixelFormat,
+      imageFormat: isMov ? 'png' : 'jpeg',
       ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
       ...(binariesDirectory && { binariesDirectory }),
       onProgress: ({ progress }) => {
