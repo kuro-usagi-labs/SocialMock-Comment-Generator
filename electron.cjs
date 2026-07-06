@@ -309,6 +309,11 @@ ipcMain.handle('render-video', async (event, options) => {
       imageFormat: isMov ? 'png' : 'jpeg',
       ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
       ...(binariesDirectory && { binariesDirectory }),
+      ...(isMov && { 
+        chromiumOptions: { 
+          gl: 'angle',
+        },
+      }),
       onProgress: ({ progress }) => {
         // progress is 0-1
         const overallProgress = 0.1 + progress * 0.85;
