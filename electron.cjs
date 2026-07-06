@@ -169,32 +169,23 @@ async function getOrCreateBundle() {
       );
       
       // ── MOV Alpha Fix ──────────────────────────────────────────────
-      // The compiled Vite CSS includes rules like:
-      //   body { background-color: #e8edf4; overflow: hidden; ... }
-      // This makes the Remotion headless page opaque, killing alpha.
-      // Strategy: strip ALL background-related properties from ANY rule
-      // that could affect the page background, then prepend a forceful
-      // transparent override.
+      // The compiled Vite CSS includes body { background-color: #e8edf4 }
+      // which makes the Remotion headless page opaque, killing alpha.
+      // ONLY strip body-level background — do NOT touch component backgrounds.
       
-      // 1. Remove background-color from any minified rule containing it
-      cssContent = cssContent.replace(/background-color\s*:[^;}]+/g, (match) => {
-        // Only strip colors that look like opaque solid colors (hex, rgb without alpha)
-        if (/transparent|rgba.*,\s*0\)/.test(match)) return match;
-        return 'background-color:transparent';
-      });
+      // 1. Target specific body background colors from index.css
+      cssContent = cssContent.replace(/background-color\s*:\s*#e8edf4/g, 'background-color:transparent');
+      cssContent = cssContent.replace(/background-color\s*:\s*#f0f4f8/g, 'background-color:transparent');
       
       // 2. Remove overflow:hidden from body (prevents clipping)
       cssContent = cssContent.replace(/overflow\s*:\s*hidden/g, 'overflow:visible');
       
-      // 3. Prepend ultra-aggressive transparent override
+      // 3. Prepend transparent override ONLY for page-level containers
       const transparentCSS = `
-/* Remotion alpha transparency override */
-html, body, html body, #root, #remotion-canvas, #container,
-div[data-remotion-canvas], #__remotion_frame,
-[data-remotion-container], .remotion-player {
+/* Remotion alpha transparency override — page-level only */
+html, body {
   background: transparent !important;
   background-color: transparent !important;
-  background-image: none !important;
 }
 `;
       cssContent = transparentCSS + cssContent;
@@ -360,6 +351,7 @@ ipcMain.handle('render-video', async (event, options) => {
       ...(isMov && { proresProfile }),
       ...(pixelFormat && { pixelFormat }),
       imageFormat,
+      ...(isGif && { everyNthFrame: 2 }), // GIF max 50fps → render 60fps, take every 2nd frame = 30fps
       ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
       ...(binariesDirectory && { binariesDirectory }),
       ...(needsAlpha && { 
