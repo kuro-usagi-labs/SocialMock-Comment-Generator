@@ -168,6 +168,9 @@ async function getOrCreateBundle() {
         `url(file:///${absoluteAssetsDir}/$1)`
       );
       
+      // Ensure transparent page background for alpha-channel video export
+      cssContent += '\nhtml, body, #remotion-canvas, #container { background: transparent !important; }\n';
+      
       fs.writeFileSync(remotionStylesPath, cssContent);
       console.log('[Remotion] CSS written to:', remotionStylesPath);
     } else {
