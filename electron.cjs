@@ -168,8 +168,20 @@ async function getOrCreateBundle() {
         `url(file:///${absoluteAssetsDir}/$1)`
       );
       
-      // Ensure transparent page background for alpha-channel video export
-      cssContent += '\nhtml, body, #remotion-canvas, #container { background: transparent !important; }\n';
+      // Strip ALL background/background-color from body rule in compiled CSS
+      // The Vite build sets body { background-color: #e8edf4 } which makes
+      // the Remotion render page opaque, preventing MOV alpha transparency.
+      cssContent = cssContent.replace(/background-color\s*:\s*#e8edf4/g, 'background-color:transparent');
+      cssContent = cssContent.replace(/overflow\s*:\s*hidden/g, 'overflow:visible');
+      
+      // Prepend a high-specificity transparent override as safety net
+      const transparentCSS = `
+html, body, html body, body.remotion-preview, #root, #remotion-canvas, #container, div[data-remotion-canvas], #__remotion_frame {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+`;
+      cssContent = transparentCSS + cssContent;
       
       fs.writeFileSync(remotionStylesPath, cssContent);
       console.log('[Remotion] CSS written to:', remotionStylesPath);
