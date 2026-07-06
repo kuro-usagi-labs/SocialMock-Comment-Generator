@@ -256,10 +256,17 @@ ipcMain.handle('render-video', async (event, options) => {
       stage: 'Preparing composition...' 
     });
 
+    // Resolve Remotion compositor binaries from unpacked path (not ASAR)
+    const binariesDirectory = app.isPackaged
+      ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 
+          'node_modules', '@remotion', 'compositor-win32-x64-msvc')
+      : null;
+
     const composition = await selectComposition({
       serveUrl: bundlePath,
       id: 'SocialMock',
       inputProps: { config },
+      ...(binariesDirectory && { binariesDirectory }),
     });
 
     // Override composition settings with user's config
@@ -300,6 +307,7 @@ ipcMain.handle('render-video', async (event, options) => {
       ...(isMov && { proresProfile }),
       pixelFormat,
       ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
+      ...(binariesDirectory && { binariesDirectory }),
       onProgress: ({ progress }) => {
         // progress is 0-1
         const overallProgress = 0.1 + progress * 0.85;
