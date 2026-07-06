@@ -79,10 +79,19 @@ function copyDirSync(src, dest) {
 async function getOrCreateBundle() {
   if (cachedBundlePath) return cachedBundlePath;
 
-  const { bundle } = require('@remotion/bundler');
-  
   const appDir = __dirname;
   const isPackaged = app.isPackaged;
+  
+  // Point esbuild to the unpacked binary so it can spawn outside ASAR
+  if (isPackaged) {
+    const unpackedDir = appDir.replace('app.asar', 'app.asar.unpacked');
+    process.env.ESBUILD_BINARY_PATH = path.join(
+      unpackedDir, 'node_modules', '@esbuild', 'win32-x64', 'esbuild.exe'
+    );
+    console.log('[Remotion] ESBUILD_BINARY_PATH:', process.env.ESBUILD_BINARY_PATH);
+  }
+
+  const { bundle } = require('@remotion/bundler');
 
   // Create a writable workspace for Remotion bundler
   const remotionWorkDir = path.join(os.tmpdir(), 'socialmock-remotion-workspace');

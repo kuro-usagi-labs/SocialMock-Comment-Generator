@@ -71,12 +71,17 @@
       "services/**/*",
       "node_modules/ffmpeg-static/**/*",
       "node_modules/@remotion/**/*",
-      "node_modules/remotion/**/*"
+      "node_modules/remotion/**/*",
+      "node_modules/esbuild/**/*",
+      "node_modules/@esbuild/**/*",
+      "node_modules/webpack/**/*"
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
       "node_modules/@remotion/**/*",
-      "node_modules/remotion/**/*"
+      "node_modules/remotion/**/*",
+      "node_modules/esbuild/**/*",
+      "node_modules/@esbuild/**/*"
     ],
     "win": {
       "target": [
