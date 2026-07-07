@@ -24,6 +24,19 @@ export interface BezierPoints { x1: number; y1: number; x2: number; y2: number; 
 // Phase 2C — Multi-Element Composition: Layer System
 // ---------------------------------------------------------------
 export type LayerType = 'background' | 'card' | 'text' | 'shape' | 'image';
+export type LayerActionKind = 'in' | 'out' | 'emphasis';
+
+export interface LayerActionBlock {
+  id: string;
+  kind: LayerActionKind;
+  name: string;
+  style: AnimationStyle;
+  startFrame: number;
+  durationFrames: number;
+  easingPreset: EasingPreset;
+  customBezier?: BezierPoints;
+  intensity: number;
+}
 
 export interface BaseLayer {
   id: string;
@@ -44,6 +57,12 @@ export interface BaseLayer {
   animationOutStyle?: AnimationStyle;
   /** Entrance delay in frames relative to canvas start */
   delayFrames: number;
+  /** Extra offset for staggered layer motion */
+  staggerFrames?: number;
+  /** GPU-friendly blur during fast transitions */
+  motionBlur?: boolean;
+  /** Timeline action blocks. Falls back to legacy animationIn/Out fields when empty. */
+  actionBlocks?: LayerActionBlock[];
 }
 
 export interface BackgroundLayer extends BaseLayer {
@@ -235,6 +254,9 @@ export const INITIAL_CONFIG: CommentConfig = {
         rotation: 0,
         opacity: 1,
         delayFrames: 0,
+        staggerFrames: 0,
+        motionBlur: false,
+        actionBlocks: [],
         bgKind: 'solid',
         bgColor1: '#0f172a',
         bgColor2: '#1e293b',
@@ -256,6 +278,30 @@ export const INITIAL_CONFIG: CommentConfig = {
         rotation: 0,
         opacity: 1,
         delayFrames: 0,
+        staggerFrames: 0,
+        motionBlur: false,
+        actionBlocks: [
+          {
+            id: 'layer-card-auto-in',
+            kind: 'in',
+            name: 'Pop in',
+            style: 'pop',
+            startFrame: 0,
+            durationFrames: 46,
+            easingPreset: 'ease-out',
+            intensity: 1,
+          },
+          {
+            id: 'layer-card-auto-out',
+            kind: 'out',
+            name: 'Fade out',
+            style: 'fade-scale',
+            startFrame: 86,
+            durationFrames: 34,
+            easingPreset: 'ease-in',
+            intensity: 1,
+          },
+        ],
         cardConfig: null, // null => inherit from root
       },
       {
@@ -271,6 +317,20 @@ export const INITIAL_CONFIG: CommentConfig = {
         rotation: 0,
         opacity: 1,
         delayFrames: 6,
+        staggerFrames: 0,
+        motionBlur: false,
+        actionBlocks: [
+          {
+            id: 'layer-overlay-auto-in',
+            kind: 'in',
+            name: 'Content in',
+            style: 'slide-up',
+            startFrame: 0,
+            durationFrames: 42,
+            easingPreset: 'ease-out',
+            intensity: 0.8,
+          },
+        ],
         text: 'New comment on your post',
         textFont: 'outfit',
         textWeight: 'medium',

@@ -18,7 +18,16 @@ import {
   Type,
   Wand2,
 } from 'lucide-react';
-import { AnimationStyle, BulkMessage, CommentConfig, Layer, Platform, VideoExportFormat } from '../types';
+import {
+  AnimationStyle,
+  BulkMessage,
+  CommentConfig,
+  EasingPreset,
+  Layer,
+  LayerActionBlock,
+  Platform,
+  VideoExportFormat,
+} from '../types';
 
 interface RightInspectorProps {
   config: CommentConfig;
@@ -44,29 +53,61 @@ interface RightInspectorProps {
   deleteActiveScene: () => void;
   selectedLayerId: string;
   setSelectedLayerId: (id: string) => void;
+  setTimelineProgress: (value: number) => void;
   updateLayer: (id: string, patch: Partial<Layer>) => void;
   moveLayer: (id: string, direction: 'up' | 'down') => void;
   resetLayerTransform: (id: string) => void;
 }
 
 const panelLabel = 'font-display text-[10px] font-black uppercase tracking-[0.18em] text-slate-500';
-const fieldClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100';
+const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100';
 const motionPresets: Array<{ value: AnimationStyle; label: string }> = [
-  { value: 'none', label: 'None' },
-  { value: 'pop', label: 'Pop' },
-  { value: 'fade-scale', label: 'Fade scale' },
-  { value: 'slide-up', label: 'Slide up' },
-  { value: 'slide-left', label: 'Slide left' },
-  { value: 'slide-right', label: 'Slide right' },
-  { value: 'elastic-spin', label: 'Elastic spin' },
-  { value: 'flip-in', label: 'Flip in' },
-  { value: 'bounce-in', label: 'Bounce in' },
+  { value: 'none', label: 'Diam' },
+  { value: 'pop', label: 'Pop halus' },
+  { value: 'fade-scale', label: 'Fade' },
+  { value: 'slide-up', label: 'Naik' },
+  { value: 'slide-left', label: 'Geser kiri' },
+  { value: 'slide-right', label: 'Geser kanan' },
+  { value: 'elastic-spin', label: 'Putar halus' },
+  { value: 'flip-in', label: 'Flip' },
+  { value: 'bounce-in', label: 'Pantul' },
   { value: 'wiggle', label: 'Wiggle' },
-  { value: 'zoom-blur', label: 'Zoom blur' },
+  { value: 'zoom-blur', label: 'Blur zoom' },
   { value: 'glitch', label: 'Glitch' },
 ];
 
-export const RightInspector: React.FC<RightInspectorProps> = ({
+const easingOptions: Array<{ value: EasingPreset; label: string }> = [
+  { value: 'linear', label: 'Linear' },
+  { value: 'ease-in', label: 'Cepat' },
+  { value: 'ease-out', label: 'Lembut' },
+  { value: 'ease-in-out', label: 'Halus' },
+  { value: 'back', label: 'Overshoot' },
+  { value: 'bounce', label: 'Pantul' },
+  { value: 'elastic', label: 'Elastis' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const quickMotionPresets: Array<{
+  label: string;
+  inStyle: AnimationStyle;
+  outStyle: AnimationStyle;
+  easeIn: EasingPreset;
+  easeOut: EasingPreset;
+  blur: boolean;
+}> = [
+  { label: 'Diam', inStyle: 'none', outStyle: 'none', easeIn: 'linear', easeOut: 'linear', blur: false },
+  { label: 'Pop halus', inStyle: 'pop', outStyle: 'fade-scale', easeIn: 'back', easeOut: 'ease-in', blur: false },
+  { label: 'Naik lembut', inStyle: 'slide-up', outStyle: 'fade-scale', easeIn: 'ease-out', easeOut: 'ease-in', blur: false },
+  { label: 'Fade clean', inStyle: 'fade-scale', outStyle: 'fade-scale', easeIn: 'ease-out', easeOut: 'ease-in', blur: false },
+  { label: 'Blur masuk', inStyle: 'zoom-blur', outStyle: 'fade-scale', easeIn: 'ease-out', easeOut: 'ease-in', blur: true },
+  { label: 'Pantul', inStyle: 'bounce-in', outStyle: 'fade-scale', easeIn: 'bounce', easeOut: 'ease-in', blur: false },
+];
+
+const findActionBlock = (layer: Layer, kind: LayerActionBlock['kind']) => {
+  return layer.actionBlocks?.find(action => action.kind === kind);
+};
+
+const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   config,
   update,
   activeTab,
@@ -85,6 +126,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   deleteActiveScene,
   selectedLayerId,
   setSelectedLayerId,
+  setTimelineProgress,
   updateLayer,
   moveLayer,
   resetLayerTransform,
@@ -102,6 +144,109 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     if (layer.type === 'card') return config.platform === 'text' ? 'Mockup card' : 'Mockup card';
     if (layer.type === 'text') return config.platform === 'text' ? 'Text layer' : 'Content layer';
     return layer.name;
+  };
+
+  const updateLayerAction = (
+    layer: Layer,
+    kind: LayerActionBlock['kind'],
+    patch: Partial<LayerActionBlock>,
+  ) => {
+    const durationFrames = kind === 'out' ? 34 : 46;
+    const startFrame = kind === 'out'
+      ? Math.max(48, Math.round((config.animationDuration || 2) * 60) - durationFrames)
+      : 0;
+    const fallbackStyle = kind === 'out'
+      ? (layer.animationOutStyle || config.animationOutStyle || 'none')
+      : (layer.animationInStyle || config.animationInStyle || config.animationStyle);
+    const fallbackEasing = kind === 'out' ? config.easingOutPreset : config.easingInPreset;
+    const currentActions = layer.actionBlocks || [];
+    const existing = currentActions.find(action => action.kind === kind);
+    const nextAction: LayerActionBlock = {
+      id: existing?.id || `${layer.id}-${kind}-action`,
+      kind,
+      name: existing?.name || (kind === 'out' ? 'Out' : kind === 'in' ? 'In' : 'Emphasis'),
+      style: existing?.style || fallbackStyle,
+      startFrame: existing?.startFrame ?? startFrame,
+      durationFrames: existing?.durationFrames ?? durationFrames,
+      easingPreset: existing?.easingPreset || fallbackEasing,
+      customBezier: existing?.customBezier,
+      intensity: existing?.intensity ?? 1,
+      ...patch,
+    };
+    const nextActions = existing
+      ? currentActions.map(action => action.kind === kind ? nextAction : action)
+      : [...currentActions, nextAction];
+
+    updateLayer(layer.id, {
+      actionBlocks: nextActions,
+      ...(kind === 'in' && patch.style ? { animationInStyle: patch.style } : {}),
+      ...(kind === 'out' && patch.style ? { animationOutStyle: patch.style } : {}),
+    } as Partial<Layer>);
+
+    const previewStart = patch.startFrame ?? nextAction.startFrame;
+    const previewLength = patch.durationFrames ?? nextAction.durationFrames;
+    const layerOffset = (layer.delayFrames || 0) + (layer.staggerFrames || 0);
+    const durationFramesTotal = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const previewFrame = layerOffset + previewStart + Math.max(1, Math.round(previewLength * 0.45));
+    setActiveTab('animation');
+    setTimelineProgress(Math.min(96, Math.max(0, (previewFrame / durationFramesTotal) * 100)));
+  };
+
+  const buildLayerActions = (
+    layer: Layer,
+    inStyle: AnimationStyle,
+    outStyle: AnimationStyle,
+    inEasing: EasingPreset,
+    outEasing: EasingPreset,
+  ): LayerActionBlock[] => {
+    const durationFramesTotal = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const inDuration = inStyle === 'none' ? 24 : 46;
+    const outDuration = outStyle === 'none' ? 24 : 34;
+    return [
+      {
+        id: `${layer.id}-in-action`,
+        kind: 'in',
+        name: 'Masuk',
+        style: inStyle,
+        startFrame: 0,
+        durationFrames: inDuration,
+        easingPreset: inEasing,
+        intensity: inStyle === 'slide-up' || inStyle === 'slide-left' || inStyle === 'slide-right' ? 0.8 : 1,
+      },
+      {
+        id: `${layer.id}-out-action`,
+        kind: 'out',
+        name: 'Keluar',
+        style: outStyle,
+        startFrame: Math.max(inDuration + 1, durationFramesTotal - outDuration),
+        durationFrames: outDuration,
+        easingPreset: outEasing,
+        intensity: outStyle === 'slide-up' || outStyle === 'slide-left' || outStyle === 'slide-right' ? 0.8 : 1,
+      },
+    ];
+  };
+
+  const applyMotionPresetToAllLayers = (
+    inStyle: AnimationStyle,
+    outStyle: AnimationStyle,
+    inEasing: EasingPreset = 'ease-out',
+    outEasing: EasingPreset = 'ease-in',
+    motionBlur = false,
+  ) => {
+    update('animationInStyle', inStyle);
+    update('animationOutStyle', outStyle);
+    update('easingInPreset', inEasing);
+    update('easingOutPreset', outEasing);
+    config.canvas.layers
+      .filter(layer => layer.type !== 'background')
+      .forEach(layer => updateLayer(layer.id, {
+        actionBlocks: buildLayerActions(layer, inStyle, outStyle, inEasing, outEasing),
+        animationInStyle: inStyle,
+        animationOutStyle: outStyle,
+        motionBlur,
+      } as Partial<Layer>));
+    setActiveTab('animation');
+    setTimelineProgress(inStyle === 'none' && outStyle === 'none' ? 50 : 14);
   };
 
   const syncBackground = (type: CommentConfig['backgroundType'], value?: string) => {
@@ -540,25 +685,199 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             <section className="space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={15} className="text-indigo-500" />
-                <p className={panelLabel}>Motion</p>
+                <p className={panelLabel}>Preset cepat</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {quickMotionPresets.map(preset => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => applyMotionPresetToAllLayers(
+                      preset.inStyle,
+                      preset.outStyle,
+                      preset.easeIn,
+                      preset.easeOut,
+                      preset.blur,
+                    )}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-xs font-black text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {selectedLayer && (
+              <section className="space-y-3 rounded-[18px] border border-indigo-100 bg-indigo-50/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={panelLabel}>Layer</p>
+                    <h3 className="mt-1 truncate text-sm font-black text-slate-900">{layerKindLabel(selectedLayer)}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLayerId(selectedLayer.id)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm"
+                    aria-label="Selected layer"
+                  >
+                    <Layers size={16} />
+                  </button>
+                </div>
+
+                <label className="block space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-500">Delay</span>
+                    <span className="text-xs font-black text-indigo-600">{selectedLayer.delayFrames || 0}f</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="120"
+                    value={selectedLayer.delayFrames || 0}
+                    onChange={(event) => updateLayer(selectedLayer.id, { delayFrames: Number(event.target.value) } as Partial<Layer>)}
+                    className="w-full accent-indigo-600"
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-500">Jeda layer</span>
+                    <span className="text-xs font-black text-indigo-600">{selectedLayer.staggerFrames || 0}f</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="90"
+                    value={selectedLayer.staggerFrames || 0}
+                    onChange={(event) => updateLayer(selectedLayer.id, { staggerFrames: Number(event.target.value) } as Partial<Layer>)}
+                    className="w-full accent-indigo-600"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => updateLayer(selectedLayer.id, { motionBlur: !selectedLayer.motionBlur } as Partial<Layer>)}
+                  className={`flex h-10 w-full items-center justify-between rounded-xl border px-3 text-xs font-black transition ${
+                    selectedLayer.motionBlur
+                      ? 'border-indigo-200 bg-white text-indigo-700 shadow-sm'
+                      : 'border-slate-200 bg-white/70 text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <span>Blur gerak</span>
+                  <span className={`h-5 w-9 rounded-full p-0.5 transition ${selectedLayer.motionBlur ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                    <span className={`block h-4 w-4 rounded-full bg-white transition ${selectedLayer.motionBlur ? 'translate-x-4' : ''}`} />
+                  </span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Masuk</span>
+                    <select
+                      value={findActionBlock(selectedLayer, 'in')?.style || selectedLayer.animationInStyle || config.animationInStyle || config.animationStyle}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'in', { style: event.target.value as AnimationStyle })}
+                      className={fieldClass}
+                    >
+                      {motionPresets.map(preset => (
+                        <option key={preset.value} value={preset.value}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Keluar</span>
+                    <select
+                      value={findActionBlock(selectedLayer, 'out')?.style || selectedLayer.animationOutStyle || config.animationOutStyle || 'none'}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'out', { style: event.target.value as AnimationStyle })}
+                      className={fieldClass}
+                    >
+                      {motionPresets.map(preset => (
+                        <option key={preset.value} value={preset.value}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Rasa masuk</span>
+                    <select
+                      value={findActionBlock(selectedLayer, 'in')?.easingPreset || config.easingInPreset}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'in', { easingPreset: event.target.value as EasingPreset })}
+                      className={fieldClass}
+                    >
+                      {easingOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Rasa keluar</span>
+                    <select
+                      value={findActionBlock(selectedLayer, 'out')?.easingPreset || config.easingOutPreset}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'out', { easingPreset: event.target.value as EasingPreset })}
+                      className={fieldClass}
+                    >
+                      {easingOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="space-y-2 rounded-[16px] border border-indigo-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-slate-700">Timing</span>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">frames</span>
+                  </div>
+                  {(['in', 'out'] as const).map(kind => {
+                    const action = findActionBlock(selectedLayer, kind);
+                    const fallbackDuration = kind === 'in' ? 46 : 34;
+                    const fallbackStart = kind === 'in' ? 0 : Math.max(48, Math.round((config.animationDuration || 2) * 60) - fallbackDuration);
+                    const startFrame = action?.startFrame ?? fallbackStart;
+                    const durationFrames = action?.durationFrames ?? fallbackDuration;
+                    return (
+                      <div key={kind} className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase text-slate-500">{kind}</span>
+                          <span className="text-[11px] font-black text-slate-900">{startFrame}f · {durationFrames}f</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400">Mulai</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max={Math.max(60, Math.round((config.animationDuration || 2) * 60))}
+                              value={startFrame}
+                              onChange={(event) => updateLayerAction(selectedLayer, kind, { startFrame: Number(event.target.value) })}
+                              className="w-full accent-indigo-600"
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400">Durasi</span>
+                            <input
+                              type="range"
+                              min="8"
+                              max="90"
+                              value={durationFrames}
+                              onChange={(event) => updateLayerAction(selectedLayer, kind, { durationFrames: Number(event.target.value) })}
+                              className="w-full accent-indigo-600"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Play size={15} className="text-indigo-500" />
+                <p className={panelLabel}>Playback</p>
               </div>
               <label className="block space-y-2">
-                <span className="text-xs font-bold text-slate-500">In preset</span>
-                <select
-                  value={config.animationInStyle}
-                  onChange={(event) => update('animationInStyle', event.target.value)}
-                  className={fieldClass}
-                >
-                  <option value="pop">Pop</option>
-                  <option value="fade-scale">Fade scale</option>
-                  <option value="slide-up">Slide up</option>
-                  <option value="slide-left">Slide left</option>
-                  <option value="flip-in">Flip in</option>
-                  <option value="glitch">Glitch</option>
-                </select>
-              </label>
-              <label className="block space-y-2">
-                <span className="text-xs font-bold text-slate-500">Duration</span>
+                <span className="text-xs font-bold text-slate-500">Durasi</span>
                 <input
                   type="range"
                   min="1"
@@ -571,15 +890,15 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <div className="text-right text-xs font-black text-indigo-600">{config.animationDuration}s</div>
               </label>
               <label className="block space-y-2">
-                <span className="text-xs font-bold text-slate-500">Loop</span>
+                <span className="text-xs font-bold text-slate-500">Playback</span>
                 <select
                   value={config.animationLoop}
                   onChange={(event) => update('animationLoop', event.target.value)}
                   className={fieldClass}
                 >
-                  <option value="once">Once</option>
+                  <option value="once">Sekali</option>
                   <option value="loop">Loop</option>
-                  <option value="ping-pong">Ping-pong</option>
+                  <option value="ping-pong">Bolak-balik</option>
                 </select>
               </label>
             </section>
@@ -625,4 +944,5 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   );
 };
 
+export const RightInspector = React.memo(RightInspectorComponent);
 export default RightInspector;

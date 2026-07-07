@@ -11,14 +11,12 @@ import TwitterCard from './components/TwitterCard';
 import InstagramCard from './components/InstagramCard';
 import BubbleChatCard from './components/BubbleChatCard';
 import TextOverlayCard from './components/TextOverlayCard';
-import { PlayerRef } from '@remotion/player';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
-import { AnimationTab } from './components/AnimationTab';
 import { RightInspector } from './components/RightInspector';
 import { TimelineDock } from './components/TimelineDock';
 import { Video, Image as ImageIcon, Type as TextIcon } from 'lucide-react';
-import type { AnimationStyle, EasingPreset } from './types';
+import { composeLayerTransform, getLayerMotion, progressToFrame } from './utils/motionEngine';
 
 const platformOptions: Array<{
   value: Platform;
@@ -35,111 +33,23 @@ const platformOptions: Array<{
   { value: 'text', label: 'Text Overlay', icon: <TextIcon size={18} strokeWidth={2.4} />, color: 'text-indigo-600' },
 ];
 
-const easeProgress = (value: number, preset?: EasingPreset) => {
-  const t = Math.min(1, Math.max(0, value));
-  if (preset === 'linear') return t;
-  if (preset === 'ease-in') return t * t * t;
-  if (preset === 'ease-in-out') return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  if (preset === 'back') {
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-  }
-  if (preset === 'bounce') {
-    const n1 = 7.5625;
-    const d1 = 2.75;
-    if (t < 1 / d1) return n1 * t * t;
-    if (t < 2 / d1) return n1 * (t - 1.5 / d1) * (t - 1.5 / d1) + 0.75;
-    if (t < 2.5 / d1) return n1 * (t - 2.25 / d1) * (t - 2.25 / d1) + 0.9375;
-    return n1 * (t - 2.625 / d1) * (t - 2.625 / d1) + 0.984375;
-  }
-  if (preset === 'elastic') {
-    if (t === 0 || t === 1) return t;
-    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
-  }
-  return 1 - Math.pow(1 - t, 3);
-};
-
-const getPreviewMotion = (
-  layer: Layer | undefined,
-  progress: number,
-  durationSeconds: number,
-  fallbackInStyle: AnimationStyle,
-  fallbackOutStyle: AnimationStyle,
-  easingInPreset: EasingPreset,
-  easingOutPreset: EasingPreset,
-) => {
-  if (!layer?.visible) return { opacity: 0, transform: 'none', filter: '' };
-
-  const fps = 60;
-  const frame = Math.round((Math.min(100, Math.max(0, progress)) / 100) * durationSeconds * fps);
-  const delayFrames = layer.delayFrames || 0;
-  const localFrame = frame - delayFrames;
-  const totalFrames = Math.max(60, Math.round(durationSeconds * fps) - delayFrames);
-  const inFrames = Math.min(34, Math.max(8, Math.floor(totalFrames * 0.42)));
-  const outFrames = Math.min(24, Math.max(8, Math.floor(totalFrames * 0.32)));
-  const outStart = Math.max(inFrames + 1, totalFrames - outFrames);
-  const inStyle = layer.animationInStyle || fallbackInStyle || 'none';
-  const outStyle = layer.animationOutStyle || fallbackOutStyle || 'none';
-
-  if (localFrame < 0) {
-    return { opacity: 0, transform: 'scale(0.96)', filter: '' };
-  }
-
-  let visibility = 1;
-  let style: AnimationStyle = 'none';
-  let localProgress = 1;
-
-  if (inStyle !== 'none' && localFrame < inFrames) {
-    style = inStyle;
-    localProgress = easeProgress(localFrame / inFrames, easingInPreset);
-    visibility = localProgress;
-  } else if (outStyle !== 'none' && localFrame >= outStart) {
-    style = outStyle;
-    const outProgress = easeProgress((localFrame - outStart) / Math.max(1, totalFrames - outStart), easingOutPreset);
-    localProgress = 1 - outProgress;
-    visibility = localProgress;
-  }
-
-  const hidden = 1 - localProgress;
-  let transform = 'none';
-  let filter = '';
-
-  if (style === 'pop') transform = `scale(${0.82 + localProgress * 0.18})`;
-  else if (style === 'slide-up') transform = `translateY(${hidden * 56}px)`;
-  else if (style === 'slide-down') transform = `translateY(${-hidden * 56}px)`;
-  else if (style === 'slide-left') transform = `translateX(${hidden * 64}px)`;
-  else if (style === 'slide-right') transform = `translateX(${-hidden * 64}px)`;
-  else if (style === 'fade-scale') transform = `scale(${0.94 + localProgress * 0.06})`;
-  else if (style === 'elastic-spin') transform = `scale(${0.82 + localProgress * 0.18}) rotate(${-180 * hidden}deg)`;
-  else if (style === 'flip-in') transform = `perspective(1000px) rotateX(${-90 * hidden}deg)`;
-  else if (style === 'bounce-in') transform = `translateY(${-Math.abs(Math.sin(localProgress * Math.PI * 2)) * hidden * 72}px) scale(${1 + Math.sin(localProgress * Math.PI) * 0.08 * hidden})`;
-  else if (style === 'rubber-band') transform = `scaleX(${1 + Math.sin(localProgress * Math.PI * 3) * 0.24 * hidden}) scaleY(${1 - Math.sin(localProgress * Math.PI * 3) * 0.12 * hidden})`;
-  else if (style === 'shake') transform = `translate(${Math.sin(frame * 1.4) * 8 * hidden}px, ${Math.cos(frame * 2.1) * 4 * hidden}px)`;
-  else if (style === 'wiggle') transform = `rotate(${Math.sin(frame * 0.35) * 7 * hidden}deg)`;
-  else if (style === 'zoom-blur') {
-    transform = `scale(${0.72 + localProgress * 0.28})`;
-    filter = `blur(${hidden * 8}px)`;
-  } else if (style === 'rotate-in') transform = `rotate(${-360 * hidden}deg) scale(${0.7 + localProgress * 0.3})`;
-  else if (style === 'swipe-in') transform = `translateX(${hidden * 180}px)`;
-  else if (style === 'glitch') {
-    transform = `translate(${Math.sin(frame * 3.7) * 10 * hidden}px, ${Math.cos(frame * 2.9) * 5 * hidden}px)`;
-    filter = `hue-rotate(${hidden * 80}deg)`;
-  }
-
-  return { opacity: visibility, transform, filter };
-};
-
 const App: React.FC = () => {
+  const initialTab = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'animation'
+    ? 'animation'
+    : 'canvas';
   const [config, setConfig] = useState<CommentConfig>(INITIAL_CONFIG);
   const [zoom, setZoom] = useState(1.15);
   const previewRef = useRef<HTMLDivElement>(null);
+  const cardPreviewRef = useRef<HTMLDivElement>(null);
+  const contentPreviewRef = useRef<HTMLSpanElement>(null);
+  const runtimeProgressRef = useRef(42);
+  const runtimeDirectionRef = useRef(1);
   const bulkExportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [isExportingBulk, setIsExportingBulk] = useState(false);
   const [bulkExportIndex, setBulkExportIndex] = useState(-1);
-  const [activeTab, setActiveTab] = useState<'canvas' | 'animation'>('canvas');
+  const [activeTab, setActiveTab] = useState<'canvas' | 'animation'>(initialTab);
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [videoExportFormat, setVideoExportFormat] = useState<VideoExportFormat>('mp4');
   const [renderProgress, setRenderProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
@@ -150,18 +60,20 @@ const App: React.FC = () => {
   const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
+  const hasBulkMessages = config.bulkMessages.length > 0;
+  const safeSelectedSceneIndex = hasBulkMessages ? Math.min(selectedSceneIndex, config.bulkMessages.length) : 0;
+  const activeBulkMessage = safeSelectedSceneIndex > 0 ? config.bulkMessages[safeSelectedSceneIndex - 1] : undefined;
+  const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
   
-  const playerRef = useRef<PlayerRef>(null);
-
   const waitForPreviewPaint = () => new Promise<void>(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     if (window.confirm('Reset all changes?')) {
       setConfig(INITIAL_CONFIG);
     }
-  };
+  }, []);
 
   const handleExport = useCallback(async () => {
     if (previewRef.current === null) return;
@@ -227,7 +139,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -236,13 +148,26 @@ const App: React.FC = () => {
       };
       reader.readAsDataURL(file);
     }
-  };
+  }, []);
 
-  const update = (key: keyof CommentConfig, value: any) => {
+  const update = useCallback((key: keyof CommentConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
-  const updateLayer = (id: string, patch: Partial<Layer>) => {
+  const setPreviewProgress = useCallback((value: number) => {
+    const next = Math.min(100, Math.max(0, value));
+    runtimeProgressRef.current = next;
+    setTimelineProgress(next);
+  }, []);
+
+  const setPreviewPlaying = useCallback((value: boolean) => {
+    if (!value) {
+      setPreviewProgress(runtimeProgressRef.current);
+    }
+    setIsTimelinePlaying(value);
+  }, [setPreviewProgress]);
+
+  const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
     setConfig(prev => ({
       ...prev,
       canvas: {
@@ -252,16 +177,16 @@ const App: React.FC = () => {
         ),
       },
     }));
-  };
+  }, []);
 
-  const resetLayerTransform = (id: string) => {
+  const resetLayerTransform = useCallback((id: string) => {
     updateLayer(id, {
       x: id === 'layer-card-auto' ? 80 : 0,
       y: id === 'layer-card-auto' ? 80 : 0,
       rotation: 0,
       opacity: 1,
     } as Partial<Layer>);
-  };
+  }, [updateLayer]);
 
   const beginLayerDrag = (id: string, event: React.PointerEvent<HTMLElement>) => {
     const layer = config.canvas.layers.find(item => item.id === id);
@@ -297,7 +222,7 @@ const App: React.FC = () => {
     window.addEventListener('pointerup', handleUp, { once: true });
   };
 
-  const moveLayer = (id: string, direction: 'up' | 'down') => {
+  const moveLayer = useCallback((id: string, direction: 'up' | 'down') => {
     setConfig(prev => {
       const layers = [...prev.canvas.layers].sort((a, b) => a.zIndex - b.zIndex);
       const currentIndex = layers.findIndex(layer => layer.id === id);
@@ -320,18 +245,18 @@ const App: React.FC = () => {
         },
       };
     });
-  };
+  }, []);
 
-  const updateBulkMessage = (index: number, patch: Partial<BulkMessage>) => {
+  const updateBulkMessage = useCallback((index: number, patch: Partial<BulkMessage>) => {
     setConfig(prev => ({
       ...prev,
       bulkMessages: prev.bulkMessages.map((message, messageIndex) =>
         messageIndex === index ? { ...message, ...patch } : message
       ),
     }));
-  };
+  }, []);
 
-  const duplicateActiveScene = () => {
+  const duplicateActiveScene = useCallback(() => {
     if (safeSelectedSceneIndex <= 0 || !activeBulkMessage) return;
     const nextMessage: BulkMessage = {
       ...activeBulkMessage,
@@ -346,9 +271,9 @@ const App: React.FC = () => {
     });
     setSelectedSceneIndex(safeSelectedSceneIndex + 1);
     toast.success('Artboard duplicated');
-  };
+  }, [activeBulkMessage, safeSelectedSceneIndex]);
 
-  const deleteActiveScene = () => {
+  const deleteActiveScene = useCallback(() => {
     if (safeSelectedSceneIndex <= 0) return;
     setConfig(prev => ({
       ...prev,
@@ -356,12 +281,13 @@ const App: React.FC = () => {
     }));
     setSelectedSceneIndex(Math.max(0, safeSelectedSceneIndex - 1));
     toast.success('Artboard deleted');
-  };
+  }, [safeSelectedSceneIndex]);
 
   const restartTimelinePlayback = () => {
     setTimelineDirection(1);
-    setTimelineProgress(0);
-    setIsTimelinePlaying(true);
+    runtimeDirectionRef.current = 1;
+    setPreviewProgress(0);
+    setPreviewPlaying(true);
   };
 
   const handleBulkExport = useCallback(async () => {
@@ -414,50 +340,6 @@ const App: React.FC = () => {
     setSelectedSceneIndex(index => Math.min(index, config.bulkMessages.length));
   }, [config.bulkMessages.length]);
 
-  useEffect(() => {
-    if (!isTimelinePlaying) return;
-
-    let rafId = 0;
-    let lastTime = performance.now();
-
-    const tick = (time: number) => {
-      const deltaSeconds = (time - lastTime) / 1000;
-      lastTime = time;
-
-      setTimelineProgress(current => {
-        const duration = Math.max(0.5, config.animationDuration || 2);
-        const delta = (deltaSeconds / duration) * 100 * timelineDirection;
-        const next = current + delta;
-
-        if (next >= 100) {
-          if (config.animationLoop === 'once') {
-            setIsTimelinePlaying(false);
-            return 100;
-          }
-          if (config.animationLoop === 'ping-pong') {
-            setTimelineDirection(-1);
-            return 100 - (next - 100);
-          }
-          return next % 100;
-        }
-
-        if (next <= 0) {
-          if (config.animationLoop === 'ping-pong') {
-            setTimelineDirection(1);
-            return Math.abs(next);
-          }
-          return 0;
-        }
-
-        return next;
-      });
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [config.animationDuration, config.animationLoop, isTimelinePlaying, timelineDirection]);
 
   const handleExportVideo = useCallback(async (format: VideoExportFormat) => {
     setVideoExportFormat(format);
@@ -477,6 +359,9 @@ const App: React.FC = () => {
         });
 
         if (result.success) {
+          if (result.alphaValidation?.warning) {
+            toast.warning(result.alphaValidation.warning);
+          }
           toast.success(`${format.toUpperCase()} exported successfully!`);
         } else if (!result.canceled) {
           toast.error(result.error || 'Failed to render video.');
@@ -496,10 +381,6 @@ const App: React.FC = () => {
     }
   }, [config]);
 
-  const hasBulkMessages = config.bulkMessages.length > 0;
-  const safeSelectedSceneIndex = hasBulkMessages ? Math.min(selectedSceneIndex, config.bulkMessages.length) : 0;
-  const activeBulkMessage = safeSelectedSceneIndex > 0 ? config.bulkMessages[safeSelectedSceneIndex - 1] : undefined;
-  const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
   const layerVisible = (id: string) => config.canvas.layers.find(layer => layer.id === id)?.visible !== false;
   const isBackgroundVisible = layerVisible('layer-bg-auto');
   const isCardVisible = layerVisible('layer-card-auto');
@@ -523,47 +404,130 @@ const App: React.FC = () => {
   const selectedLayer = config.canvas.layers.find(layer => layer.id === selectedLayerId);
   const cardLayer = config.canvas.layers.find(layer => layer.id === 'layer-card-auto');
   const contentLayer = config.canvas.layers.find(layer => layer.id === 'layer-overlay-auto');
-  const cardOffsetX = (cardLayer?.x ?? 80) - 80;
-  const cardOffsetY = (cardLayer?.y ?? 80) - 80;
-  const showSelectionChrome = !isCapturingPreview && activeTab === 'canvas';
-  const cardMotion = getPreviewMotion(
-    cardLayer,
-    timelineProgress,
-    config.animationDuration || 2,
-    config.animationInStyle || config.animationStyle,
-    config.animationOutStyle,
-    config.easingInPreset,
-    config.easingOutPreset,
-  );
-  const contentMotion = getPreviewMotion(
-    contentLayer,
-    timelineProgress,
-    config.animationDuration || 2,
-    contentLayer?.animationInStyle || config.animationInStyle || config.animationStyle,
-    contentLayer?.animationOutStyle || config.animationOutStyle,
-    config.easingInPreset,
-    config.easingOutPreset,
-  );
+  const showSelectionChrome = !isCapturingPreview;
+  const previewFrame = progressToFrame(timelineProgress, config.animationDuration || 2, 60);
+  const motionContext = {
+    frame: previewFrame,
+    fps: 60,
+    durationInFrames: Math.max(60, Math.round((config.animationDuration || 2) * 60)),
+    config,
+  };
+  const cardMotion = getLayerMotion(cardLayer, motionContext);
+  const contentMotion = getLayerMotion(contentLayer, motionContext);
   const previewConfig: CommentConfig = isBackgroundVisible
     ? activeConfig
     : { ...activeConfig, backgroundType: 'transparent' };
 
-  const updateActiveSceneMessage = (patch: Partial<BulkMessage>) => {
+  const applyPreviewProgress = useCallback((progress: number) => {
+    const frame = progressToFrame(progress, config.animationDuration || 2, 60);
+    const durationInFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const context = {
+      frame,
+      fps: 60,
+      durationInFrames,
+      config,
+    };
+    const nextCardMotion = getLayerMotion(cardLayer, context);
+    const nextContentMotion = getLayerMotion(contentLayer, context);
+
+    if (cardPreviewRef.current) {
+      cardPreviewRef.current.style.transform = composeLayerTransform(cardLayer, nextCardMotion);
+      cardPreviewRef.current.style.opacity = String((cardLayer?.opacity ?? 1) * nextCardMotion.opacity);
+      cardPreviewRef.current.style.filter = nextCardMotion.filter || '';
+    }
+
+    if (contentPreviewRef.current && contentLayer) {
+      contentPreviewRef.current.style.transform = nextContentMotion.transform;
+      contentPreviewRef.current.style.opacity = String((contentLayer.opacity ?? 1) * nextContentMotion.opacity);
+      contentPreviewRef.current.style.filter = nextContentMotion.filter || '';
+    }
+  }, [cardLayer, config, contentLayer]);
+
+  useEffect(() => {
+    if (isTimelinePlaying) return;
+    runtimeProgressRef.current = timelineProgress;
+    applyPreviewProgress(timelineProgress);
+  }, [applyPreviewProgress, isTimelinePlaying, timelineProgress]);
+
+  useEffect(() => {
+    if (!isTimelinePlaying) return;
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let lastUiUpdate = lastTime;
+    runtimeDirectionRef.current = timelineDirection;
+
+    const tick = (time: number) => {
+      const deltaSeconds = (time - lastTime) / 1000;
+      lastTime = time;
+      const duration = Math.max(0.5, config.animationDuration || 2);
+      const delta = (deltaSeconds / duration) * 100 * runtimeDirectionRef.current;
+      let next = runtimeProgressRef.current + delta;
+      let stopPlayback = false;
+
+      if (next >= 100) {
+        if (config.animationLoop === 'once') {
+          next = 100;
+          stopPlayback = true;
+        } else if (config.animationLoop === 'ping-pong') {
+          runtimeDirectionRef.current = -1;
+          setTimelineDirection(-1);
+          next = 100 - (next - 100);
+        } else {
+          next = next % 100;
+        }
+      }
+
+      if (next <= 0) {
+        if (config.animationLoop === 'ping-pong') {
+          runtimeDirectionRef.current = 1;
+          setTimelineDirection(1);
+          next = Math.abs(next);
+        } else {
+          next = 0;
+        }
+      }
+
+      runtimeProgressRef.current = next;
+      applyPreviewProgress(next);
+
+      if (time - lastUiUpdate >= 40 || stopPlayback) {
+        setTimelineProgress(next);
+        lastUiUpdate = time;
+      }
+
+      if (stopPlayback) {
+        setIsTimelinePlaying(false);
+        return;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [applyPreviewProgress, config.animationDuration, config.animationLoop, isTimelinePlaying, timelineDirection]);
+
+  const updateActiveSceneMessage = useCallback((patch: Partial<BulkMessage>) => {
     if (safeSelectedSceneIndex <= 0) return;
     updateBulkMessage(safeSelectedSceneIndex - 1, patch);
-  };
+  }, [safeSelectedSceneIndex, updateBulkMessage]);
 
-  const renderContentNode = (content: string) => {
+  const renderContentNode = (content: string, attachRuntimeRef = true) => {
     if (!isContentVisible) return '';
     if (!contentLayer) return undefined;
     return (
       <span
+        ref={attachRuntimeRef ? contentPreviewRef : undefined}
         className="inline-block max-w-full"
         style={{
           opacity: (contentLayer.opacity ?? 1) * contentMotion.opacity,
           transform: contentMotion.transform,
           filter: contentMotion.filter || undefined,
           transformOrigin: 'center',
+          transition: 'none',
+          willChange: 'transform, opacity, filter',
+          backfaceVisibility: 'hidden',
           overflowWrap: 'anywhere',
         }}
       >
@@ -572,9 +536,9 @@ const App: React.FC = () => {
     );
   };
 
-  const renderCardForPlatform = (message?: BulkMessage, forceContentVisible = true) => {
+  const renderCardForPlatform = (message?: BulkMessage, forceContentVisible = true, attachRuntimeRef = true) => {
     const overriddenConfig = applyBulkMessageToConfig(message);
-    const contentNode = forceContentVisible ? renderContentNode(overriddenConfig.content) : '';
+    const contentNode = forceContentVisible ? renderContentNode(overriddenConfig.content, attachRuntimeRef) : '';
     switch (config.platform) {
       case 'facebook': return <FacebookCard config={overriddenConfig} contentNode={contentNode} />;
       case 'youtube': return <YouTubeCard config={overriddenConfig} contentNode={contentNode} />;
@@ -730,60 +694,55 @@ const App: React.FC = () => {
 
         <div className="flex min-h-0 min-w-0 flex-1">
           <section className="relative flex min-h-0 min-w-0 flex-1 flex-col p-3 md:p-4">
-            {activeTab === 'canvas' ? (
-              <>
-                <PreviewCanvas
-                  config={previewConfig}
-                  previewRef={previewRef}
-                  zoom={zoom}
-                  hasBulkMessages={hasBulkMessages}
-                  selectedLayerId={selectedLayerId}
-                  showSelectionChrome={showSelectionChrome}
-                  onCanvasSelect={() => setSelectedLayerId('layer-bg-auto')}
-                >
-                  <div
-                    onPointerDown={(event) => beginLayerDrag('layer-card-auto', event)}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setSelectedLayerId('layer-card-auto');
-                    }}
-                    className={`group/layer relative inline-flex max-w-full touch-none justify-center rounded-[26px] ${
-                      draggingLayerId === 'layer-card-auto' ? 'cursor-grabbing' : 'cursor-grab transition'
-                    } ${
-                      showSelectionChrome && selectedLayerId === 'layer-card-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-white' : ''
-                    }`}
-                    style={{
-                      transform: `translate3d(${cardOffsetX}px, ${cardOffsetY}px, 0) rotate(${cardLayer?.rotation || 0}deg) ${cardMotion.transform !== 'none' ? cardMotion.transform : ''}`,
-                      opacity: (cardLayer?.opacity ?? 1) * cardMotion.opacity,
-                      filter: cardMotion.filter || undefined,
-                      transformOrigin: 'center',
-                    }}
-                  >
-                    {showSelectionChrome && selectedLayerId === 'layer-card-auto' && (
-                      <div className="pointer-events-none absolute -top-9 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-950 px-3 py-1.5 text-[11px] font-black text-white shadow-lg">
-                        <span>Mockup card</span>
-                        <span className="h-1 w-1 rounded-full bg-slate-500" />
-                        <span>{selectedLayer?.x ?? cardLayer?.x}px, {selectedLayer?.y ?? cardLayer?.y}px</span>
-                      </div>
-                    )}
-                    {isCardVisible ? renderCardForPlatform(activeBulkMessage, isContentVisible) : (
-                      <div className="flex min-h-[220px] w-full items-center justify-center rounded-[26px] border border-dashed border-slate-300 bg-white/60 px-8 text-center text-sm font-bold text-slate-400">
-                        Mockup card layer hidden
-                      </div>
-                    )}
+            <PreviewCanvas
+              config={previewConfig}
+              previewRef={previewRef}
+              zoom={zoom}
+              hasBulkMessages={hasBulkMessages}
+              selectedLayerId={selectedLayerId}
+              showSelectionChrome={showSelectionChrome}
+              mode={activeTab}
+              isPlaying={isTimelinePlaying}
+              progress={timelineProgress}
+              duration={config.animationDuration}
+              onCanvasSelect={() => setSelectedLayerId('layer-bg-auto')}
+            >
+              <div
+                ref={cardPreviewRef}
+                onPointerDown={(event) => beginLayerDrag('layer-card-auto', event)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedLayerId('layer-card-auto');
+                }}
+                className={`group/layer relative inline-flex max-w-full touch-none justify-center rounded-[26px] ${
+                  draggingLayerId === 'layer-card-auto' ? 'cursor-grabbing' : 'cursor-grab'
+                } ${
+                  showSelectionChrome && selectedLayerId === 'layer-card-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-white' : ''
+                }`}
+                style={{
+                  transform: composeLayerTransform(cardLayer, cardMotion),
+                  opacity: (cardLayer?.opacity ?? 1) * cardMotion.opacity,
+                  filter: cardMotion.filter || undefined,
+                  transformOrigin: 'center',
+                  transition: 'none',
+                  willChange: 'transform, opacity, filter',
+                  backfaceVisibility: 'hidden',
+                }}
+              >
+                {showSelectionChrome && selectedLayerId === 'layer-card-auto' && (
+                  <div className="pointer-events-none absolute -top-9 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-950 px-3 py-1.5 text-[11px] font-black text-white shadow-lg">
+                    <span>Mockup card</span>
+                    <span className="h-1 w-1 rounded-full bg-slate-500" />
+                    <span>{selectedLayer?.x ?? cardLayer?.x}px, {selectedLayer?.y ?? cardLayer?.y}px</span>
                   </div>
-                </PreviewCanvas>
-              </>
-            ) : (
-              <AnimationTab
-                config={config}
-                update={update}
-                onExportVideo={handleExportVideo}
-                isExportingVideo={isExportingVideo}
-                videoExportFormat={videoExportFormat}
-                playerRef={playerRef}
-              />
-            )}
+                )}
+                {isCardVisible ? renderCardForPlatform(activeBulkMessage, isContentVisible) : (
+                  <div className="flex min-h-[220px] w-full items-center justify-center rounded-[26px] border border-dashed border-slate-300 bg-white/60 px-8 text-center text-sm font-bold text-slate-400">
+                    Mockup card layer hidden
+                  </div>
+                )}
+              </div>
+            </PreviewCanvas>
           </section>
 
           <RightInspector
@@ -805,6 +764,7 @@ const App: React.FC = () => {
             deleteActiveScene={deleteActiveScene}
             selectedLayerId={selectedLayerId}
             setSelectedLayerId={setSelectedLayerId}
+            setTimelineProgress={setPreviewProgress}
             updateLayer={updateLayer}
             moveLayer={moveLayer}
             resetLayerTransform={resetLayerTransform}
@@ -817,9 +777,9 @@ const App: React.FC = () => {
           setActiveTab={setActiveTab}
           bulkMessages={config.bulkMessages}
           progress={timelineProgress}
-          setProgress={setTimelineProgress}
+          setProgress={setPreviewProgress}
           isPlaying={isTimelinePlaying}
-          setIsPlaying={setIsTimelinePlaying}
+          setIsPlaying={setPreviewPlaying}
           restartPlayback={restartTimelinePlayback}
           update={update}
           selectedLayerId={selectedLayerId}
@@ -835,7 +795,7 @@ const App: React.FC = () => {
             style={{ left: '-9999px', top: '-9999px' }}
           >
             <div ref={bulkExportRef} style={{ width: config.width }}>
-              {isCardVisible ? renderCardForPlatform(config.bulkMessages[bulkExportIndex], isContentVisible) : null}
+              {isCardVisible ? renderCardForPlatform(config.bulkMessages[bulkExportIndex], isContentVisible, false) : null}
             </div>
           </div>
         )}

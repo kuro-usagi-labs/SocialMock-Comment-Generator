@@ -147,7 +147,7 @@ const Toggle: React.FC<{
   </button>
 );
 
-export const ControlPanel: React.FC<ControlPanelProps> = ({
+const ControlPanelComponent: React.FC<ControlPanelProps> = ({
   config,
   update,
   handleReset,
@@ -689,3 +689,5 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     </div>
   );
 };
+
+export const ControlPanel = React.memo(ControlPanelComponent);

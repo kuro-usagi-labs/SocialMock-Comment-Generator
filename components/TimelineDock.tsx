@@ -1,6 +1,7 @@
-import React from 'react';
-import { Circle, Clock3, Eye, EyeOff, Layers, Pause, Play, RotateCcw, Sparkles } from 'lucide-react';
-import { BulkMessage, CommentConfig, Layer } from '../types';
+import React, { useMemo, useState } from 'react';
+import { Circle, Clock3, Eye, EyeOff, GripVertical, Layers, Pause, Play, RotateCcw, Sparkles } from 'lucide-react';
+import { BulkMessage, CommentConfig, Layer, LayerActionBlock } from '../types';
+import { getLayerActionBlocks, speedToFrames } from '../utils/motionEngine';
 
 interface TimelineDockProps {
   config: CommentConfig;
@@ -20,7 +21,56 @@ interface TimelineDockProps {
   setSelectedSceneIndex: (index: number) => void;
 }
 
-export const TimelineDock: React.FC<TimelineDockProps> = ({
+type DragMode = 'move' | 'resize-start' | 'resize-end';
+
+const actionTone: Record<LayerActionBlock['kind'], string> = {
+  in: 'from-indigo-500 to-violet-500 text-white shadow-indigo-500/20',
+  out: 'from-slate-800 to-slate-600 text-white shadow-slate-500/20',
+  emphasis: 'from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/20',
+};
+
+const minActionFrames = 8;
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const layerLabel = (layer: Layer, platform: CommentConfig['platform']) => {
+  if (layer.type === 'background') return 'Background';
+  if (layer.type === 'card') return 'Mockup card';
+  if (layer.type === 'text') return platform === 'text' ? 'Text layer' : 'Content';
+  return layer.name;
+};
+
+const fallbackActions = (layer: Layer, config: CommentConfig, durationFrames: number): LayerActionBlock[] => {
+  const inDuration = Math.min(speedToFrames[config.animationSpeed || 'medium'], Math.max(10, Math.floor(durationFrames * 0.42)));
+  const outDuration = Math.min(Math.max(8, Math.round(inDuration * 0.7)), Math.max(10, Math.floor(durationFrames * 0.42)));
+
+  return [
+    {
+      id: `${layer.id}-in-action`,
+      kind: 'in',
+      name: 'In',
+      style: layer.animationInStyle || config.animationInStyle || config.animationStyle || 'none',
+      startFrame: 0,
+      durationFrames: inDuration,
+      easingPreset: config.easingInPreset,
+      customBezier: config.customBezierIn,
+      intensity: 1,
+    },
+    {
+      id: `${layer.id}-out-action`,
+      kind: 'out',
+      name: 'Out',
+      style: layer.animationOutStyle || config.animationOutStyle || 'none',
+      startFrame: Math.max(inDuration + 1, durationFrames - outDuration),
+      durationFrames: outDuration,
+      easingPreset: config.easingOutPreset,
+      customBezier: config.customBezierOut,
+      intensity: 1,
+    },
+  ];
+};
+
+const TimelineDockComponent: React.FC<TimelineDockProps> = ({
   config,
   activeTab,
   setActiveTab,
@@ -38,19 +88,87 @@ export const TimelineDock: React.FC<TimelineDockProps> = ({
   setSelectedSceneIndex,
 }) => {
   const duration = Math.max(1, config.animationDuration || 2);
+  const durationFrames = Math.max(60, Math.round(duration * 60));
   const markers = [0, 0.25, 0.5, 0.75, 1];
   const currentSecond = (duration * progress) / 100;
   const orderedLayers = [...config.canvas.layers].sort((a, b) => b.zIndex - a.zIndex);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
-  const layerLabel = (layer: Layer) => {
-    if (layer.type === 'background') return 'Background';
-    if (layer.type === 'card') return 'Mockup card';
-    if (layer.type === 'text') return config.platform === 'text' ? 'Text layer' : 'Content';
-    return layer.name;
+  const motionContext = useMemo(() => ({
+    frame: Math.round((progress / 100) * durationFrames),
+    fps: 60,
+    durationInFrames: durationFrames,
+    config,
+  }), [config, durationFrames, progress]);
+
+  const getRawActions = (layer: Layer) => {
+    return layer.actionBlocks && layer.actionBlocks.length > 0
+      ? layer.actionBlocks
+      : fallbackActions(layer, config, durationFrames);
+  };
+
+  const commitAction = (layer: Layer, actionId: string, patch: Partial<LayerActionBlock>) => {
+    const currentActions = getRawActions(layer);
+    const nextActions = currentActions.map(action => action.id === actionId ? { ...action, ...patch } : action);
+    updateLayer(layer.id, { actionBlocks: nextActions } as Partial<Layer>);
+  };
+
+  const beginActionDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    layer: Layer,
+    action: LayerActionBlock,
+    mode: DragMode,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveTab('animation');
+    setSelectedLayerId(layer.id);
+    setSelectedActionId(action.id);
+    setIsPlaying(false);
+
+    const timeline = event.currentTarget.closest('[data-timeline-track="true"]') as HTMLElement | null;
+    if (!timeline) return;
+
+    const bounds = timeline.getBoundingClientRect();
+    const startX = event.clientX;
+    const startFrame = action.startFrame;
+    const startDuration = action.durationFrames;
+    const framesPerPx = durationFrames / Math.max(1, bounds.width);
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const deltaFrames = Math.round((moveEvent.clientX - startX) * framesPerPx);
+      if (mode === 'move') {
+        commitAction(layer, action.id, {
+          startFrame: clamp(startFrame + deltaFrames, 0, durationFrames - minActionFrames),
+        });
+        return;
+      }
+
+      if (mode === 'resize-start') {
+        const nextStart = clamp(startFrame + deltaFrames, 0, startFrame + startDuration - minActionFrames);
+        commitAction(layer, action.id, {
+          startFrame: nextStart,
+          durationFrames: clamp(startDuration + (startFrame - nextStart), minActionFrames, durationFrames - nextStart),
+        });
+        return;
+      }
+
+      commitAction(layer, action.id, {
+        durationFrames: clamp(startDuration + deltaFrames, minActionFrames, durationFrames - startFrame),
+      });
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   };
 
   return (
-    <div className="hidden h-[188px] shrink-0 border-t border-slate-200 bg-white lg:flex">
+    <div className="hidden h-[224px] shrink-0 border-t border-slate-200 bg-white lg:flex">
       <div className="flex w-[220px] shrink-0 flex-col justify-between border-r border-slate-200 px-4 py-3">
         <div>
           <p className="font-display text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Timeline</p>
@@ -136,19 +254,19 @@ export const TimelineDock: React.FC<TimelineDockProps> = ({
           </div>
         </div>
 
-        <div className="grid h-[92px] grid-cols-[168px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50">
+        <div className="grid h-[128px] grid-cols-[168px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50">
           <div className="border-r border-slate-200 bg-white/80">
             {orderedLayers.map(layer => (
               <button
                 key={layer.id}
                 type="button"
                 onClick={() => setSelectedLayerId(layer.id)}
-                className={`flex h-[30px] w-full items-center gap-2 px-3 text-left text-xs font-black transition ${
+                className={`flex h-10 w-full items-center gap-2 px-3 text-left text-xs font-black transition ${
                   selectedLayerId === layer.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
                 <span className={`h-2 w-2 rounded-full ${layer.visible ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                <span className="min-w-0 flex-1 truncate">{layerLabel(layer)}</span>
+                <span className="min-w-0 flex-1 truncate">{layerLabel(layer, config.platform)}</span>
                 <span
                   onClick={(event) => {
                     event.stopPropagation();
@@ -165,37 +283,68 @@ export const TimelineDock: React.FC<TimelineDockProps> = ({
             ))}
           </div>
 
-          <div className="relative">
+          <div className="relative" data-timeline-track="true">
             <div className="pointer-events-none absolute inset-x-3 top-0 z-0 flex h-full justify-between">
               {markers.map(marker => (
-                <span key={marker} className="h-full w-px bg-slate-200" />
+                <span key={marker} className="relative h-full w-px bg-slate-200">
+                  <span className="absolute left-1 top-1 text-[10px] font-black text-slate-300">{(marker * duration).toFixed(marker === 0 ? 0 : 1)}s</span>
+                </span>
               ))}
             </div>
+
             {orderedLayers.map((layer, index) => {
-              const left = Math.min(64, (layer.delayFrames / 60 / duration) * 100);
-              const width = Math.max(18, 92 - left - index * 4);
+              const visualActions = getLayerActionBlocks(layer, motionContext);
+              const offset = (layer.delayFrames || 0) + (layer.staggerFrames || 0);
               return (
-                <button
-                  key={layer.id}
-                  type="button"
-                  onClick={() => setSelectedLayerId(layer.id)}
-                  className={`absolute z-10 h-5 rounded-full transition ${
-                    selectedLayerId === layer.id ? 'bg-indigo-600 shadow-sm' : 'bg-slate-300 hover:bg-slate-400'
-                  } ${layer.visible ? '' : 'opacity-40'}`}
-                  style={{
-                    top: `${6 + index * 30}px`,
-                    left: `calc(12px + ${left}%)`,
-                    width: `calc(${width}% - 24px)`,
-                  }}
-                  aria-label={`Select ${layerLabel(layer)} timeline layer`}
-                />
+                <div key={layer.id} className="absolute left-3 right-3 z-10 h-10" style={{ top: `${index * 40}px` }}>
+                  <div className="absolute inset-x-0 top-1/2 h-px bg-slate-200" />
+                  {visualActions.map(action => {
+                    const rawStart = Math.max(0, action.startFrame - offset);
+                    const left = clamp((action.startFrame / durationFrames) * 100, 0, 98);
+                    const width = clamp((action.durationFrames / durationFrames) * 100, 3, 100 - left);
+                    const isSelected = selectedLayerId === layer.id && selectedActionId === action.id;
+                    return (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'move')}
+                        className={`group/action absolute top-2 flex h-6 min-w-12 items-center overflow-hidden rounded-full bg-gradient-to-r px-1 text-[10px] font-black uppercase tracking-[0.04em] shadow-sm transition ${actionTone[action.kind]} ${
+                          isSelected ? 'ring-2 ring-slate-950 ring-offset-2 ring-offset-slate-50' : 'hover:shadow-md'
+                        } ${layer.visible ? '' : 'opacity-40'}`}
+                        style={{
+                          left: `${left}%`,
+                          width: `${width}%`,
+                        }}
+                        title={`${layerLabel(layer, config.platform)} ${action.name}: ${action.style}`}
+                        aria-label={`Move ${action.name} action block`}
+                      >
+                        <span
+                          className="flex h-full w-3 shrink-0 cursor-ew-resize items-center justify-center rounded-l-full opacity-70 hover:bg-white/20"
+                          onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'resize-start')}
+                          aria-hidden="true"
+                        >
+                          <GripVertical size={10} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate px-1">{action.kind} · {action.style}</span>
+                        <span
+                          className="flex h-full w-3 shrink-0 cursor-ew-resize items-center justify-center rounded-r-full opacity-70 hover:bg-white/20"
+                          onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'resize-end')}
+                          aria-hidden="true"
+                        >
+                          <GripVertical size={10} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
+
             <div
               className="pointer-events-none absolute inset-y-0 z-20 w-px bg-slate-950"
               style={{ left: `calc(12px + ${progress}% - ${progress * 0.24}px)` }}
             >
-              <span className="absolute -left-3 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-white shadow-md">
+              <span className="absolute -left-3 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-white shadow-md">
                 <Circle size={8} fill="currentColor" />
               </span>
             </div>
@@ -217,7 +366,7 @@ export const TimelineDock: React.FC<TimelineDockProps> = ({
         <div className="mt-2 flex items-center gap-2 overflow-hidden">
           <span className="flex shrink-0 items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-black text-indigo-700">
             <Sparkles size={12} />
-            {config.animationInStyle}
+            action blocks
           </span>
           {bulkMessages.length > 0 && (
             <span className="truncate rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
@@ -242,4 +391,5 @@ export const TimelineDock: React.FC<TimelineDockProps> = ({
   );
 };
 
+export const TimelineDock = React.memo(TimelineDockComponent);
 export default TimelineDock;

@@ -12,6 +12,12 @@ interface RenderResult {
   filePath?: string;
   canceled?: boolean;
   error?: string;
+  alphaValidation?: {
+    ok: boolean;
+    codecName?: string;
+    pixelFormat?: string;
+    warning?: string;
+  } | null;
 }
 
 interface RenderProgressData {

@@ -122,8 +122,8 @@ async function getOrCreateBundle() {
     }
   }
 
-  // Copy component directories
-  const dirsToCopy = ['components'];
+  // Copy source directories used by Remotion components
+  const dirsToCopy = ['components', 'utils'];
   for (const dir of dirsToCopy) {
     const src = path.join(appDir, dir);
     const dest = path.join(remotionWorkDir, dir);
@@ -240,6 +240,110 @@ html, body {
   return cachedBundlePath;
 }
 
+function getFfmpegPath(binariesDirectory) {
+  try {
+    let ffmpegPath = require('ffmpeg-static');
+    if (ffmpegPath && ffmpegPath.includes('app.asar')) {
+      ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+    }
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) return ffmpegPath;
+  } catch (e) {
+    // ffmpeg-static is optional in some packaging contexts.
+  }
+
+  if (binariesDirectory) {
+    const bundledPath = path.join(binariesDirectory, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    if (fs.existsSync(bundledPath)) return bundledPath;
+  }
+
+  return null;
+}
+
+function getFfprobePath(ffmpegPath, binariesDirectory) {
+  if (binariesDirectory) {
+    const bundledPath = path.join(binariesDirectory, process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+    if (fs.existsSync(bundledPath)) return bundledPath;
+  }
+
+  if (!ffmpegPath) return null;
+
+  const parsed = path.parse(ffmpegPath);
+  const siblingName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const siblingPath = path.join(parsed.dir, siblingName);
+  return fs.existsSync(siblingPath) ? siblingPath : null;
+}
+
+function execFileAsync(command, args) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve, reject) => {
+    execFile(command, args, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function validateAlphaOutput(filePath, ffmpegPath, binariesDirectory, expectedPixelFormats) {
+  const ffprobePath = getFfprobePath(ffmpegPath, binariesDirectory);
+  if (!ffprobePath) {
+    return {
+      ok: false,
+      warning: 'FFprobe not available; alpha pixel format was not validated.',
+    };
+  }
+
+  const { stdout } = await execFileAsync(ffprobePath, [
+    '-v', 'error',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=codec_name,pix_fmt',
+    '-of', 'default=noprint_wrappers=1:nokey=0',
+    filePath,
+  ]);
+
+  const pixelFormat = stdout.match(/pix_fmt=([^\r\n]+)/)?.[1]?.trim() || '';
+  const codecName = stdout.match(/codec_name=([^\r\n]+)/)?.[1]?.trim() || '';
+  const ok = expectedPixelFormats.includes(pixelFormat);
+
+  return {
+    ok,
+    codecName,
+    pixelFormat,
+    warning: ok ? undefined : `Expected alpha pixel format ${expectedPixelFormats.join(' or ')}, got ${pixelFormat || 'unknown'}.`,
+  };
+}
+
+async function renderTransparentFrames({
+  renderFrames,
+  composition,
+  serveUrl,
+  inputProps,
+  outputDir,
+  browserExecutable,
+  binariesDirectory,
+  durationInFrames,
+  onProgress,
+}) {
+  await renderFrames({
+    composition,
+    serveUrl,
+    inputProps,
+    imageFormat: 'png',
+    outputDir,
+    ...(browserExecutable && { browserExecutable }),
+    ...(binariesDirectory && { binariesDirectory }),
+    chromiumOptions: { gl: 'angle', disableWebSecurity: false },
+    onFrameUpdate: (frame) => {
+      onProgress(frame);
+    },
+  });
+
+  const padLength = String(durationInFrames - 1).length;
+  return `element-%0${padLength}d.png`;
+}
+
 /**
  * Main video render handler using Remotion's native renderMedia().
  * Replaces the old frame-by-frame screenshot pipeline.
@@ -294,11 +398,14 @@ ipcMain.handle('render-video', async (event, options) => {
       ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 
           'node_modules', '@remotion', 'compositor-win32-x64-msvc')
       : null;
+    const renderConfig = needsAlpha
+      ? { ...config, greenscreen: false, backgroundType: 'transparent' }
+      : config;
 
     const composition = await selectComposition({
       serveUrl: bundlePath,
       id: 'SocialMock',
-      inputProps: { config },
+      inputProps: { config: renderConfig },
       ...(binariesDirectory && { binariesDirectory }),
     });
 
@@ -307,8 +414,8 @@ ipcMain.handle('render-video', async (event, options) => {
       ...composition,
       fps,
       durationInFrames,
-      width: config.width || 1080,
-      height: config.width || 1080, // square by default
+      width: renderConfig.width || 1080,
+      height: renderConfig.width || 1080, // square by default
     };
 
     // Use Electron's embedded Chromium for rendering
@@ -320,28 +427,27 @@ ipcMain.handle('render-video', async (event, options) => {
       stage: 'Rendering frames...' 
     });
 
-    if (isMov) {
+    let alphaValidation = null;
+
+    if (needsAlpha) {
       // ── MOV Alpha: renderFrames() + manual FFmpeg prores_ks ──
       // Remotion's renderMedia() loses alpha in ProRes encoding.
       // We render individual transparent PNG frames, then encode 
       // manually with FFmpeg using prores_ks which properly handles alpha.
       
-      const os = require('os');
-      const { execFile } = require('child_process');
-      
       const framesDir = path.join(os.tmpdir(), `socialmock-frames-${Date.now()}`);
       fs.mkdirSync(framesDir, { recursive: true });
 
-      await renderFrames({
+      const framePattern = await renderTransparentFrames({
+        renderFrames,
         composition: compositionWithOverrides,
         serveUrl: bundlePath,
-        inputProps: { config },
-        imageFormat: 'png',
+        inputProps: { config: renderConfig },
         outputDir: framesDir,
-        ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
-        ...(binariesDirectory && { binariesDirectory }),
-        chromiumOptions: { gl: 'angle' },
-        onFrameUpdate: (frame) => {
+        browserExecutable: electronChromiumPath,
+        binariesDirectory,
+        durationInFrames,
+        onProgress: (frame) => {
           const progress = 0.1 + (frame / durationInFrames) * 0.6;
           mainWindow.webContents.send('render-progress', {
             progress,
@@ -353,57 +459,68 @@ ipcMain.handle('render-video', async (event, options) => {
       // Step 4: Encode PNGs → ProRes 4444 MOV with FFmpeg
       mainWindow.webContents.send('render-progress', { 
         progress: 0.75, 
-        stage: 'Encoding ProRes 4444 with alpha...' 
+        stage: isMov ? 'Encoding ProRes 4444 with alpha...' : 'Encoding VP9 WebM with alpha...' 
       });
 
-      // Get FFmpeg binary path
-      let ffmpegPath;
-      try {
-        ffmpegPath = require('ffmpeg-static');
-        if (ffmpegPath && ffmpegPath.includes('app.asar')) {
-          ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
-        }
-      } catch (e) {
-        // Try Remotion's bundled ffmpeg
-        if (binariesDirectory) {
-          ffmpegPath = path.join(binariesDirectory, 'ffmpeg.exe');
-        }
-      }
+      const ffmpegPath = getFfmpegPath(binariesDirectory);
 
       if (!ffmpegPath) {
-        throw new Error('FFmpeg not available for MOV encoding');
+        throw new Error('FFmpeg not available for alpha encoding');
       }
 
       // Encode with explicit alpha channel preservation
       // Remotion renderFrames outputs: element-000.png, element-001.png, etc.
-      const padLength = String(durationInFrames - 1).length;
-      const framePattern = `element-%0${padLength}d.png`;
-      const ffmpegArgs = [
-        '-y',
-        '-framerate', String(fps),
-        '-i', path.join(framesDir, framePattern),
-        '-c:v', 'prores_ks',
-        '-profile:v', '4444',
-        '-pix_fmt', 'yuva444p10le',
-        '-vendor', 'apl0',
-        '-bits_per_mb', '8000',
-        '-an',
-        filePath,
-      ];
+      const ffmpegArgs = isMov
+        ? [
+          '-y',
+          '-framerate', String(fps),
+          '-i', path.join(framesDir, framePattern),
+          '-c:v', 'prores_ks',
+          '-profile:v', '4444',
+          '-pix_fmt', 'yuva444p10le',
+          '-alpha_bits', '16',
+          '-vendor', 'apl0',
+          '-bits_per_mb', '8000',
+          '-an',
+          filePath,
+        ]
+        : [
+          '-y',
+          '-framerate', String(fps),
+          '-i', path.join(framesDir, framePattern),
+          '-c:v', 'libvpx-vp9',
+          '-pix_fmt', 'yuva420p',
+          '-auto-alt-ref', '0',
+          '-b:v', '0',
+          '-crf', '30',
+          '-an',
+          filePath,
+        ];
 
-      await new Promise((resolve, reject) => {
-        const proc = execFile(ffmpegPath, ffmpegArgs, (error, stdout, stderr) => {
-          // Clean up temp frames
-          try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (e) {}
-          
-          if (error) {
-            console.error('[FFmpeg ProRes] Error:', error, stderr);
-            reject(new Error(`FFmpeg ProRes encode failed: ${stderr || error.message}`));
-          } else {
-            resolve();
-          }
-        });
+      try {
+        await execFileAsync(ffmpegPath, ffmpegArgs);
+      } catch (error) {
+        console.error('[FFmpeg Alpha] Error:', error);
+        throw new Error(`${isMov ? 'ProRes' : 'VP9 WebM'} alpha encode failed: ${error.message}`);
+      } finally {
+        try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (e) {}
+      }
+
+      mainWindow.webContents.send('render-progress', {
+        progress: 0.92,
+        stage: 'Validating alpha channel...'
       });
+
+      alphaValidation = await validateAlphaOutput(
+        filePath,
+        ffmpegPath,
+        binariesDirectory,
+        isMov ? ['yuva444p10le'] : ['yuva420p']
+      );
+
+      if (!alphaValidation.ok) {
+        console.warn('[Alpha Validation]', alphaValidation.warning);
+      }
 
     } else {
       // ── Standard renderMedia for MP4, GIF, WebM ──
@@ -411,10 +528,6 @@ ipcMain.handle('render-video', async (event, options) => {
       if (isGif) {
         codec = 'gif';
         pixelFormat = undefined;
-        imageFormat = 'png';
-      } else if (isWebm) {
-        codec = 'vp8';
-        pixelFormat = 'yuva420p';
         imageFormat = 'png';
       } else {
         // MP4
@@ -428,15 +541,12 @@ ipcMain.handle('render-video', async (event, options) => {
         serveUrl: bundlePath,
         codec,
         outputLocation: filePath,
-        inputProps: { config },
+        inputProps: { config: renderConfig },
         ...(pixelFormat && { pixelFormat }),
         imageFormat,
         ...(isGif && { everyNthFrame: 2 }),
         ...(electronChromiumPath && { browserExecutable: electronChromiumPath }),
         ...(binariesDirectory && { binariesDirectory }),
-        ...(isWebm && { 
-          chromiumOptions: { gl: 'angle' },
-        }),
         onProgress: ({ progress }) => {
           const overallProgress = 0.1 + progress * 0.85;
           mainWindow.webContents.send('render-progress', {
@@ -452,7 +562,7 @@ ipcMain.handle('render-video', async (event, options) => {
       stage: 'Done!' 
     });
 
-    return { success: true, filePath };
+    return { success: true, filePath, alphaValidation };
   } catch (error) {
     console.error('[Remotion] Render error:', error);
     return { success: false, error: error.message };
