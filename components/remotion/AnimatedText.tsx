@@ -51,8 +51,8 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
       case 'ease-out': return Easing.out(Easing.cubic);
       case 'ease-in-out': return Easing.inOut(Easing.cubic);
       case 'bounce': return Easing.bounce;
-      case 'elastic': return Easing.elastic(Easing.ease);
-      case 'back': return Easing.back(Easing.ease);
+      case 'elastic': return Easing.elastic(1);
+      case 'back': return Easing.back(1.7);
       case 'spring': return Easing.out(Easing.cubic);
       case 'custom': {
         if (customBezier) return Easing.bezier(customBezier.x1, customBezier.y1, customBezier.x2, customBezier.y2);

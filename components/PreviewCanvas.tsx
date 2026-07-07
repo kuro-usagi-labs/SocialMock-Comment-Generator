@@ -7,10 +7,22 @@ interface PreviewCanvasProps {
   previewRef: React.RefObject<HTMLDivElement>;
   zoom: number;
   hasBulkMessages?: boolean;
+  selectedLayerId?: string;
+  showSelectionChrome?: boolean;
+  onCanvasSelect?: () => void;
   children: React.ReactNode;
 }
 
-export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef, zoom, hasBulkMessages = false, children }) => {
+export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
+  config,
+  previewRef,
+  zoom,
+  hasBulkMessages = false,
+  selectedLayerId,
+  showSelectionChrome = true,
+  onCanvasSelect,
+  children,
+}) => {
   const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
   const displayZoom = viewportWidth < 768
     ? Math.min(zoom, Math.max(0.25, (viewportWidth - 88) / config.width))
@@ -29,18 +41,17 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
 
   return (
     <div 
-      className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-slate-100 px-4 md:px-6"
+      onClick={onCanvasSelect}
+      className="relative min-h-0 flex-1 overflow-auto rounded-[22px] border border-slate-200 bg-slate-100 px-4 md:px-6"
       style={{
         backgroundImage: `linear-gradient(rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.18) 1px, transparent 1px)`,
         backgroundSize: '28px 28px',
       }}
     >
       <div
-        className={`relative mx-auto flex w-full flex-1 min-h-full items-center justify-center pt-12 ${
-          hasBulkMessages ? 'pb-[240px]' : 'pb-16'
-        }`}
+        className="relative mx-auto flex min-h-full w-full flex-1 items-center justify-center pb-16 pt-12"
       >
-        <div className="pointer-events-none absolute left-4 top-4 hidden items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 md:flex shadow-sm">
+        <div className="pointer-events-none absolute left-4 top-4 hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm md:flex">
           <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.16)]" />
           <span className="truncate">Live Preview</span>
         </div>
@@ -57,10 +68,10 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
             >
               <div
                 id="export-container"
-                className={`rounded-lg p-8 flex justify-center ${getBackgroundClass()}`}
+                className={`rounded-[28px] p-8 flex justify-center transition ${showSelectionChrome && selectedLayerId === 'layer-bg-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-slate-100' : ''} ${getBackgroundClass()}`}
                 style={getBackgroundStyle()}
               >
-                <AnimatePresence mode="wait">
+                <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={config.platform}
                     initial={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -78,9 +89,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({ config, previewRef
         </div>
         
         <div
-          className={`absolute left-1/2 hidden -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm lg:block ${
-            hasBulkMessages ? 'bottom-[228px]' : 'bottom-10'
-          }`}
+          className="absolute bottom-10 left-1/2 hidden -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm lg:block"
         >
           <div className="segmented-control">
             <button type="button" className="segmented-btn segmented-btn-active text-xs">Desktop</button>

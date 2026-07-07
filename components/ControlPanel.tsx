@@ -131,7 +131,7 @@ const Toggle: React.FC<{
   <button
     type="button"
     onClick={onChange}
-    className="glass-button flex w-full min-w-0 items-center justify-between rounded-lg px-4 py-3 text-left transition"
+    className="glass-button flex w-full min-w-0 items-center justify-between rounded-lg px-4 py-3 pr-5 text-left transition"
   >
     <span className="flex min-w-0 items-center gap-3 font-bold text-slate-700">
       {icon && <span className="shrink-0">{icon}</span>}
@@ -175,7 +175,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <div className="flex h-[54vh] w-full flex-shrink-0 flex-row overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_-16px_48px_rgba(15,23,42,0.12)] md:h-full md:w-full md:rounded-none md:border-0 md:shadow-none">
+    <div className="flex h-[54vh] w-full min-w-0 flex-shrink-0 flex-row overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_-16px_48px_rgba(15,23,42,0.12)] md:h-full md:w-full md:rounded-none md:border-0 md:shadow-none">
       <nav className="hidden w-[72px] flex-col items-center border-r border-slate-800 bg-slate-950 px-3 py-4 md:flex">
         <button
           type="button"
@@ -215,14 +215,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </button>
       </nav>
 
-      <aside className="flex h-full w-full flex-col md:w-[348px]">
+      <aside className="flex h-full w-full min-w-0 flex-col overflow-x-hidden md:w-[348px]">
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <h1 className="font-display truncate text-lg font-black tracking-tight text-slate-900">Inspector</h1>
               <p className="mt-0.5 truncate text-xs font-bold text-slate-500">Edit content, style, and output</p>
             </div>
-            <span className="shrink-0 rounded-md bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700">
+            <span className="hidden shrink-0 rounded-md bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 sm:inline-flex">
               Ready
             </span>
           </div>
@@ -238,7 +238,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <button
                 type="button"
                 onClick={handleRandomizeProfile}
-                className="glass-button flex min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-bold text-indigo-600"
+                className="glass-button hidden min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-bold text-indigo-600 sm:flex"
                 title="Randomize Profile"
               >
                 <Dices size={14} className="shrink-0" />

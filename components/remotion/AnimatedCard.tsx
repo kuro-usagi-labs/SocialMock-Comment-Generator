@@ -113,13 +113,17 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
   const { fps, durationInFrames } = useVideoConfig();
 
   const overriddenConfig = applyBulkMessageToConfig(config, message);
-  const animationInStyle = overriddenConfig.animationInStyle || overriddenConfig.animationStyle;
-  const animationOutStyle = overriddenConfig.animationOutStyle || 'none';
+  const cardLayer = overriddenConfig.canvas.layers.find(layer => layer.id === 'layer-card-auto');
+  const contentLayer = overriddenConfig.canvas.layers.find(layer => layer.id === 'layer-overlay-auto');
+  const layerDelay = cardLayer?.delayFrames || 0;
+  const animationInStyle = cardLayer?.animationInStyle || overriddenConfig.animationInStyle || overriddenConfig.animationStyle;
+  const animationOutStyle = cardLayer?.animationOutStyle || overriddenConfig.animationOutStyle || 'none';
   const baseInFrames = speedToFrames[overriddenConfig.animationSpeed || 'medium'];
-  const maxTransitionFrames = Math.max(6, Math.floor(durationInFrames * 0.42));
+  const localDurationInFrames = Math.max(1, durationInFrames - layerDelay);
+  const maxTransitionFrames = Math.max(6, Math.floor(localDurationInFrames * 0.42));
   const inFrames = Math.min(baseInFrames, maxTransitionFrames);
   const outFrames = Math.min(Math.max(8, Math.round(baseInFrames * 0.7)), maxTransitionFrames);
-  const outStartFrame = Math.max(inFrames + 1, durationInFrames - outFrames);
+  const outStartFrame = Math.max(inFrames + 1, localDurationInFrames - outFrames);
 
   // ── Loop Mode ──────────────────────────────────────────
   const loopMode = overriddenConfig.animationLoop || 'loop';
@@ -131,6 +135,7 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
     effectiveFrame = cyclePos < durationInFrames ? cyclePos : cycleLength - cyclePos - 1;
   }
   // 'once' and 'loop' use frame as-is (Remotion Player handles looping)
+  const layerFrame = effectiveFrame - layerDelay;
 
   // ── Easing Selection (separate for In and Out) ─────────────
   const getEasingFn = (preset: EasingPreset, bezier?: BezierPoints) => {
@@ -140,8 +145,8 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
       case 'ease-out': return Easing.out(Easing.cubic);
       case 'ease-in-out': return Easing.inOut(Easing.cubic);
       case 'bounce': return Easing.bounce;
-      case 'elastic': return Easing.elastic(Easing.ease);
-      case 'back': return Easing.back(Easing.ease);
+      case 'elastic': return Easing.elastic(1);
+      case 'back': return Easing.back(1.7);
       case 'spring': return Easing.out(Easing.cubic);
       case 'custom': {
         if (bezier) return Easing.bezier(bezier.x1, bezier.y1, bezier.x2, bezier.y2);
@@ -155,48 +160,56 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
 
   const inProgress = animationInStyle === 'none'
     ? 1
-    : interpolate(effectiveFrame, [0, inFrames], [0, 1], {
+    : interpolate(layerFrame, [0, inFrames], [0, 1], {
       easing: easingInFn,
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
   const outProgress = animationOutStyle === 'none'
     ? 0
-    : interpolate(effectiveFrame, [outStartFrame, durationInFrames - 1], [0, 1], {
+    : interpolate(layerFrame, [outStartFrame, localDurationInFrames - 1], [0, 1], {
       easing: easingOutFn,
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
   const inSpring = spring({
-    frame: Math.min(effectiveFrame, inFrames),
+    frame: Math.min(Math.max(0, layerFrame), inFrames),
     fps,
     durationInFrames: inFrames,
     config: { damping: 12, mass: 0.5, stiffness: 180 },
   });
   const outSpring = spring({
-    frame: Math.max(0, effectiveFrame - outStartFrame),
+    frame: Math.max(0, layerFrame - outStartFrame),
     fps,
     durationInFrames: outFrames,
     config: { damping: 16, mass: 0.6, stiffness: 140 },
   });
 
-  const motionState = effectiveFrame < inFrames
-    ? getEffectState(animationInStyle, inProgress, inSpring, effectiveFrame, inFrames)
-    : effectiveFrame >= outStartFrame
-      ? getEffectState(animationOutStyle, 1 - outProgress, 1 - outSpring, effectiveFrame, outFrames)
+  const motionState = layerFrame < 0
+    ? { opacity: 0, transform: 'scale(0.96)', filter: '' }
+    : layerFrame < inFrames
+    ? getEffectState(animationInStyle, inProgress, inSpring, layerFrame, inFrames)
+    : layerFrame >= outStartFrame
+      ? getEffectState(animationOutStyle, 1 - outProgress, 1 - outSpring, layerFrame, outFrames)
       : { opacity: 1, transform: 'none', filter: '' };
 
-  const animatedContent = overriddenConfig.textAnimationMode === 'off' ? undefined : (
-    <AnimatedText
-      mode={overriddenConfig.textAnimationMode}
-      preset={overriddenConfig.textAnimationPreset}
-      speed={overriddenConfig.animationSpeed || 'medium'}
-      easingPreset={overriddenConfig.easingInPreset || 'ease-out'}
-      customBezier={overriddenConfig.customBezierIn}
-    >
-      {overriddenConfig.content}
-    </AnimatedText>
-  );
+  const animatedContent = contentLayer?.visible === false
+    ? ''
+    : overriddenConfig.textAnimationMode === 'off'
+      ? undefined
+      : (
+        <span style={{ opacity: contentLayer?.opacity ?? 1 }}>
+          <AnimatedText
+            mode={overriddenConfig.textAnimationMode}
+            preset={overriddenConfig.textAnimationPreset}
+            speed={overriddenConfig.animationSpeed || 'medium'}
+            easingPreset={overriddenConfig.easingInPreset || 'ease-out'}
+            customBezier={overriddenConfig.customBezierIn}
+          >
+            {overriddenConfig.content}
+          </AnimatedText>
+        </span>
+      );
 
   const renderCard = () => {
     switch (config.platform) {
@@ -205,7 +218,7 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
       case 'tiktok': return <TikTokCard config={overriddenConfig} contentNode={animatedContent} />;
       case 'twitter': return <TwitterCard config={overriddenConfig} contentNode={animatedContent} />;
       case 'instagram': return <InstagramCard config={overriddenConfig} contentNode={animatedContent} />;
-      case 'dm': return <BubbleChatCard config={overriddenConfig} messageOverride={message?.content} />;
+      case 'dm': return <BubbleChatCard config={overriddenConfig} messageOverride={contentLayer?.visible === false ? '' : message?.content} />;
       case 'text': return <TextOverlayCard config={overriddenConfig} contentNode={animatedContent} />;
       default: return null;
     }
@@ -213,7 +226,9 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
 
   return (
     <div style={{ 
-      ...motionState, 
+      ...motionState,
+      opacity: (cardLayer?.opacity ?? 1) * motionState.opacity,
+      transform: `translate3d(${(cardLayer?.x ?? 80) - 80}px, ${(cardLayer?.y ?? 80) - 80}px, 0) rotate(${cardLayer?.rotation || 0}deg) ${motionState.transform !== 'none' ? motionState.transform : ''}`,
       width: config.width, 
       display: 'flex', 
       justifyContent: 'center', 
