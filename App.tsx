@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { toBlob, toPng } from 'html-to-image';
 import { Copy, Download, Loader2, MessageCircle, Minus, PackageCheck, Plus, RotateCcw } from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaTiktok, FaXTwitter, FaYoutube } from 'react-icons/fa6';
@@ -17,6 +17,7 @@ import { RightInspector } from './components/RightInspector';
 import { TimelineDock } from './components/TimelineDock';
 import { Video, Image as ImageIcon, Type as TextIcon } from 'lucide-react';
 import { composeLayerTransform, getLayerMotion, progressToFrame } from './utils/motionEngine';
+import { usePreviewRuntime } from './utils/previewRuntime';
 
 const platformOptions: Array<{
   value: Platform;
@@ -42,8 +43,6 @@ const App: React.FC = () => {
   const previewRef = useRef<HTMLDivElement>(null);
   const cardPreviewRef = useRef<HTMLDivElement>(null);
   const contentPreviewRef = useRef<HTMLSpanElement>(null);
-  const runtimeProgressRef = useRef(42);
-  const runtimeDirectionRef = useRef(1);
   const bulkExportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
@@ -153,19 +152,6 @@ const App: React.FC = () => {
   const update = useCallback((key: keyof CommentConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
   }, []);
-
-  const setPreviewProgress = useCallback((value: number) => {
-    const next = Math.min(100, Math.max(0, value));
-    runtimeProgressRef.current = next;
-    setTimelineProgress(next);
-  }, []);
-
-  const setPreviewPlaying = useCallback((value: boolean) => {
-    if (!value) {
-      setPreviewProgress(runtimeProgressRef.current);
-    }
-    setIsTimelinePlaying(value);
-  }, [setPreviewProgress]);
 
   const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
     setConfig(prev => ({
@@ -283,13 +269,6 @@ const App: React.FC = () => {
     toast.success('Artboard deleted');
   }, [safeSelectedSceneIndex]);
 
-  const restartTimelinePlayback = () => {
-    setTimelineDirection(1);
-    runtimeDirectionRef.current = 1;
-    setPreviewProgress(0);
-    setPreviewPlaying(true);
-  };
-
   const handleBulkExport = useCallback(async () => {
     if (config.bulkMessages.length === 0) return;
     setIsExportingBulk(true);
@@ -404,6 +383,18 @@ const App: React.FC = () => {
   const selectedLayer = config.canvas.layers.find(layer => layer.id === selectedLayerId);
   const cardLayer = config.canvas.layers.find(layer => layer.id === 'layer-card-auto');
   const contentLayer = config.canvas.layers.find(layer => layer.id === 'layer-overlay-auto');
+  const previewLayerTargets = useMemo(() => [
+    {
+      layerId: 'layer-card-auto',
+      ref: cardPreviewRef,
+      transformMode: 'composed' as const,
+    },
+    {
+      layerId: 'layer-overlay-auto',
+      ref: contentPreviewRef,
+      transformMode: 'motion-only' as const,
+    },
+  ], []);
   const showSelectionChrome = !isCapturingPreview;
   const previewFrame = progressToFrame(timelineProgress, config.animationDuration || 2, 60);
   const motionContext = {
@@ -418,95 +409,21 @@ const App: React.FC = () => {
     ? activeConfig
     : { ...activeConfig, backgroundType: 'transparent' };
 
-  const applyPreviewProgress = useCallback((progress: number) => {
-    const frame = progressToFrame(progress, config.animationDuration || 2, 60);
-    const durationInFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
-    const context = {
-      frame,
-      fps: 60,
-      durationInFrames,
-      config,
-    };
-    const nextCardMotion = getLayerMotion(cardLayer, context);
-    const nextContentMotion = getLayerMotion(contentLayer, context);
-
-    if (cardPreviewRef.current) {
-      cardPreviewRef.current.style.transform = composeLayerTransform(cardLayer, nextCardMotion);
-      cardPreviewRef.current.style.opacity = String((cardLayer?.opacity ?? 1) * nextCardMotion.opacity);
-      cardPreviewRef.current.style.filter = nextCardMotion.filter || '';
-    }
-
-    if (contentPreviewRef.current && contentLayer) {
-      contentPreviewRef.current.style.transform = nextContentMotion.transform;
-      contentPreviewRef.current.style.opacity = String((contentLayer.opacity ?? 1) * nextContentMotion.opacity);
-      contentPreviewRef.current.style.filter = nextContentMotion.filter || '';
-    }
-  }, [cardLayer, config, contentLayer]);
-
-  useEffect(() => {
-    if (isTimelinePlaying) return;
-    runtimeProgressRef.current = timelineProgress;
-    applyPreviewProgress(timelineProgress);
-  }, [applyPreviewProgress, isTimelinePlaying, timelineProgress]);
-
-  useEffect(() => {
-    if (!isTimelinePlaying) return;
-
-    let rafId = 0;
-    let lastTime = performance.now();
-    let lastUiUpdate = lastTime;
-    runtimeDirectionRef.current = timelineDirection;
-
-    const tick = (time: number) => {
-      const deltaSeconds = (time - lastTime) / 1000;
-      lastTime = time;
-      const duration = Math.max(0.5, config.animationDuration || 2);
-      const delta = (deltaSeconds / duration) * 100 * runtimeDirectionRef.current;
-      let next = runtimeProgressRef.current + delta;
-      let stopPlayback = false;
-
-      if (next >= 100) {
-        if (config.animationLoop === 'once') {
-          next = 100;
-          stopPlayback = true;
-        } else if (config.animationLoop === 'ping-pong') {
-          runtimeDirectionRef.current = -1;
-          setTimelineDirection(-1);
-          next = 100 - (next - 100);
-        } else {
-          next = next % 100;
-        }
-      }
-
-      if (next <= 0) {
-        if (config.animationLoop === 'ping-pong') {
-          runtimeDirectionRef.current = 1;
-          setTimelineDirection(1);
-          next = Math.abs(next);
-        } else {
-          next = 0;
-        }
-      }
-
-      runtimeProgressRef.current = next;
-      applyPreviewProgress(next);
-
-      if (time - lastUiUpdate >= 40 || stopPlayback) {
-        setTimelineProgress(next);
-        lastUiUpdate = time;
-      }
-
-      if (stopPlayback) {
-        setIsTimelinePlaying(false);
-        return;
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [applyPreviewProgress, config.animationDuration, config.animationLoop, isTimelinePlaying, timelineDirection]);
+  const {
+    setPreviewProgress,
+    setPreviewPlaying,
+    restartPlayback: restartTimelinePlayback,
+  } = usePreviewRuntime({
+    config,
+    layers: config.canvas.layers,
+    targets: previewLayerTargets,
+    progress: timelineProgress,
+    isPlaying: isTimelinePlaying,
+    direction: timelineDirection,
+    setProgress: setTimelineProgress,
+    setIsPlaying: setIsTimelinePlaying,
+    setDirection: setTimelineDirection,
+  });
 
   const updateActiveSceneMessage = useCallback((patch: Partial<BulkMessage>) => {
     if (safeSelectedSceneIndex <= 0) return;

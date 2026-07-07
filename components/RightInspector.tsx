@@ -540,8 +540,8 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   <label className="block space-y-1.5">
                     <span className="text-xs font-bold text-slate-500">In action</span>
                     <select
-                      value={selectedLayer.animationInStyle || config.animationInStyle || config.animationStyle}
-                      onChange={(event) => updateLayer(selectedLayer.id, { animationInStyle: event.target.value as AnimationStyle } as Partial<Layer>)}
+                      value={findActionBlock(selectedLayer, 'in')?.style || selectedLayer.animationInStyle || config.animationInStyle || config.animationStyle}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'in', { style: event.target.value as AnimationStyle })}
                       className={fieldClass}
                     >
                       {motionPresets.map(preset => (
@@ -552,8 +552,8 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   <label className="block space-y-1.5">
                     <span className="text-xs font-bold text-slate-500">Out action</span>
                     <select
-                      value={selectedLayer.animationOutStyle || config.animationOutStyle || 'none'}
-                      onChange={(event) => updateLayer(selectedLayer.id, { animationOutStyle: event.target.value as AnimationStyle } as Partial<Layer>)}
+                      value={findActionBlock(selectedLayer, 'out')?.style || selectedLayer.animationOutStyle || config.animationOutStyle || 'none'}
+                      onChange={(event) => updateLayerAction(selectedLayer, 'out', { style: event.target.value as AnimationStyle })}
                       className={fieldClass}
                     >
                       {motionPresets.map(preset => (
