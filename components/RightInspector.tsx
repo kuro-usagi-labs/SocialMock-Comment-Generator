@@ -8,12 +8,14 @@ import {
   EyeOff,
   Film,
   Image as ImageIcon,
+  Plus,
   Layers,
   MessageCircle,
   Palette,
   Play,
   RotateCcw,
   Sparkles,
+  Square,
   Trash2,
   Type,
   Wand2,
@@ -57,6 +59,9 @@ interface RightInspectorProps {
   updateLayer: (id: string, patch: Partial<Layer>) => void;
   moveLayer: (id: string, direction: 'up' | 'down') => void;
   resetLayerTransform: (id: string) => void;
+  addLayer: (kind: 'text' | 'shape' | 'image') => void;
+  duplicateLayer: (id: string) => void;
+  deleteLayer: (id: string) => void;
 }
 
 const panelLabel = 'font-display text-[10px] font-black uppercase tracking-[0.18em] text-slate-500';
@@ -130,6 +135,9 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   updateLayer,
   moveLayer,
   resetLayerTransform,
+  addLayer,
+  duplicateLayer,
+  deleteLayer,
 }) => {
   const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
   const selectedLayer = config.canvas.layers.find(layer => layer.id === selectedLayerId) || config.canvas.layers[1] || config.canvas.layers[0];
@@ -393,6 +401,32 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                 <Layers size={15} className="text-indigo-500" />
                 <p className={panelLabel}>Layers</p>
               </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => addLayer('text')}
+                  className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Type size={13} />
+                  Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addLayer('shape')}
+                  className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Square size={13} />
+                  Shape
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addLayer('image')}
+                  className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <ImageIcon size={13} />
+                  Image
+                </button>
+              </div>
               {orderedLayers.map((layer) => (
                 <div
                   key={layer.id}
@@ -407,7 +441,13 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   >
                     <span className="block truncate text-sm font-black text-slate-800">{layerKindLabel(layer)}</span>
                     <span className="block truncate text-xs font-bold capitalize text-slate-400">
-                      {layer.type === 'background' ? config.backgroundType : layer.type === 'card' ? `${config.width}px` : config.platform === 'dm' ? 'Bubble' : 'Text'}
+                      {layer.type === 'background'
+                        ? config.backgroundType
+                        : layer.type === 'card'
+                          ? `${config.width}px`
+                          : layer.type === 'text'
+                            ? (layer.id === 'layer-overlay-auto' && config.platform === 'dm' ? 'Bubble' : 'Text')
+                            : layer.type}
                     </span>
                   </button>
                   <button
@@ -424,7 +464,7 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                 </div>
               ))}
               {selectedLayer && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <button
                     type="button"
                     onClick={() => moveLayer(selectedLayer.id, 'up')}
@@ -432,7 +472,7 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                     className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ArrowUp size={14} />
-                    Forward
+                    Up
                   </button>
                   <button
                     type="button"
@@ -441,7 +481,25 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                     className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ArrowDown size={14} />
-                    Back
+                    Down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => duplicateLayer(selectedLayer.id)}
+                    disabled={selectedLayer.type === 'background'}
+                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <CopyPlus size={14} />
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteLayer(selectedLayer.id)}
+                    disabled={['layer-bg-auto', 'layer-card-auto', 'layer-overlay-auto'].includes(selectedLayer.id)}
+                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                    Del
                   </button>
                 </div>
               )}
@@ -483,6 +541,29 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                       value={selectedLayer.y}
                       disabled={selectedLayer.type === 'background'}
                       onChange={(event) => updateLayer(selectedLayer.id, { y: Number(event.target.value) } as Partial<Layer>)}
+                      className={fieldClass}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">W</span>
+                    <input
+                      type="number"
+                      value={selectedLayer.width}
+                      disabled={selectedLayer.type === 'background' || selectedLayer.type === 'card'}
+                      onChange={(event) => updateLayer(selectedLayer.id, { width: Math.max(24, Number(event.target.value)) } as Partial<Layer>)}
+                      className={fieldClass}
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">H</span>
+                    <input
+                      type="number"
+                      value={selectedLayer.height}
+                      disabled={selectedLayer.type === 'background' || selectedLayer.type === 'card'}
+                      onChange={(event) => updateLayer(selectedLayer.id, { height: Math.max(24, Number(event.target.value)) } as Partial<Layer>)}
                       className={fieldClass}
                     />
                   </label>
@@ -642,40 +723,215 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   <label className="block space-y-2">
                     <span className="text-xs font-bold text-slate-500">Content</span>
                     <textarea
-                      value={activeConfig.content}
-                      onChange={(event) => updateActiveContent(event.target.value)}
+                      value={selectedLayer.id === 'layer-overlay-auto' ? activeConfig.content : selectedLayer.text}
+                      onChange={(event) => {
+                        if (selectedLayer.id === 'layer-overlay-auto') {
+                          updateActiveContent(event.target.value);
+                          return;
+                        }
+                        updateLayer(selectedLayer.id, { text: event.target.value } as Partial<Layer>);
+                      }}
                       className={`${fieldClass} min-h-[92px] resize-none leading-relaxed`}
                     />
                   </label>
+                  {selectedLayer.id === 'layer-overlay-auto' ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block space-y-2">
+                          <span className="text-xs font-bold text-slate-500">Name</span>
+                          <input
+                            value={activeConfig.displayName}
+                            onChange={(event) => updateActiveIdentity('displayName', event.target.value)}
+                            className={fieldClass}
+                          />
+                        </label>
+                        <label className="block space-y-2">
+                          <span className="text-xs font-bold text-slate-500">Handle</span>
+                          <input
+                            value={activeConfig.username}
+                            onChange={(event) => updateActiveIdentity('username', event.target.value)}
+                            className={fieldClass}
+                          />
+                        </label>
+                      </div>
+                      <label className="block space-y-2">
+                        <span className="text-xs font-bold text-slate-500">Font size</span>
+                        <input
+                          type="range"
+                          min={config.platform === 'text' ? '16' : '12'}
+                          max="32"
+                          value={config.fontSize}
+                          onChange={(event) => update('fontSize', parseInt(event.target.value))}
+                          className="w-full accent-indigo-600"
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block space-y-2">
+                          <span className="text-xs font-bold text-slate-500">Text</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.textColor}
+                            onChange={(event) => updateLayer(selectedLayer.id, { textColor: event.target.value } as Partial<Layer>)}
+                            className="h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1"
+                          />
+                        </label>
+                        <label className="block space-y-2">
+                          <span className="text-xs font-bold text-slate-500">Box</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.backgroundColor.startsWith('#') ? selectedLayer.backgroundColor : '#ffffff'}
+                            onChange={(event) => updateLayer(selectedLayer.id, { backgroundColor: event.target.value } as Partial<Layer>)}
+                            className="h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1"
+                          />
+                        </label>
+                      </div>
+                      <label className="block space-y-2">
+                        <div className="flex justify-between gap-3">
+                          <span className="text-xs font-bold text-slate-500">Font size</span>
+                          <span className="text-xs font-black text-indigo-600">{selectedLayer.textSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="12"
+                          max="96"
+                          value={selectedLayer.textSize}
+                          onChange={(event) => updateLayer(selectedLayer.id, { textSize: Number(event.target.value) } as Partial<Layer>)}
+                          className="w-full accent-indigo-600"
+                        />
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['left', 'center', 'right'] as const).map(align => (
+                          <button
+                            key={align}
+                            type="button"
+                            onClick={() => updateLayer(selectedLayer.id, { textAlign: align } as Partial<Layer>)}
+                            className={`h-9 rounded-xl border text-xs font-black capitalize transition ${
+                              selectedLayer.textAlign === align ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white text-slate-600'
+                            }`}
+                          >
+                            {align}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {selectedLayer?.type === 'shape' && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['rectangle', 'circle', 'line'] as const).map(kind => (
+                      <button
+                        key={kind}
+                        type="button"
+                        onClick={() => updateLayer(selectedLayer.id, { shapeKind: kind } as Partial<Layer>)}
+                        className={`h-9 rounded-xl border text-xs font-black capitalize transition ${
+                          selectedLayer.shapeKind === kind ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white text-slate-600'
+                        }`}
+                      >
+                        {kind}
+                      </button>
+                    ))}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="block space-y-2">
-                      <span className="text-xs font-bold text-slate-500">Name</span>
+                      <span className="text-xs font-bold text-slate-500">Fill</span>
                       <input
-                        value={activeConfig.displayName}
-                        onChange={(event) => updateActiveIdentity('displayName', event.target.value)}
-                        className={fieldClass}
+                        type="color"
+                        value={selectedLayer.fillColor}
+                        onChange={(event) => updateLayer(selectedLayer.id, { fillColor: event.target.value } as Partial<Layer>)}
+                        className="h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1"
                       />
                     </label>
                     <label className="block space-y-2">
-                      <span className="text-xs font-bold text-slate-500">Handle</span>
+                      <span className="text-xs font-bold text-slate-500">Stroke</span>
                       <input
-                        value={activeConfig.username}
-                        onChange={(event) => updateActiveIdentity('username', event.target.value)}
-                        className={fieldClass}
+                        type="color"
+                        value={selectedLayer.strokeColor}
+                        onChange={(event) => updateLayer(selectedLayer.id, { strokeColor: event.target.value } as Partial<Layer>)}
+                        className="h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1"
                       />
                     </label>
                   </div>
                   <label className="block space-y-2">
-                    <span className="text-xs font-bold text-slate-500">Font size</span>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs font-bold text-slate-500">Stroke width</span>
+                      <span className="text-xs font-black text-indigo-600">{selectedLayer.strokeWidth}px</span>
+                    </div>
                     <input
                       type="range"
-                      min={config.platform === 'text' ? '16' : '12'}
-                      max="32"
-                      value={config.fontSize}
-                      onChange={(event) => update('fontSize', parseInt(event.target.value))}
+                      min="0"
+                      max="24"
+                      value={selectedLayer.strokeWidth}
+                      onChange={(event) => updateLayer(selectedLayer.id, { strokeWidth: Number(event.target.value) } as Partial<Layer>)}
                       className="w-full accent-indigo-600"
                     />
                   </label>
+                  <label className="block space-y-2">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs font-bold text-slate-500">Radius</span>
+                      <span className="text-xs font-black text-indigo-600">{selectedLayer.borderRadius}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="80"
+                      value={selectedLayer.borderRadius}
+                      disabled={selectedLayer.shapeKind === 'circle'}
+                      onChange={(event) => updateLayer(selectedLayer.id, { borderRadius: Number(event.target.value) } as Partial<Layer>)}
+                      className="w-full accent-indigo-600 disabled:opacity-40"
+                    />
+                  </label>
+                </>
+              )}
+
+              {selectedLayer?.type === 'image' && (
+                <>
+                  <label className="block space-y-2">
+                    <span className="text-xs font-bold text-slate-500">Image URL</span>
+                    <input
+                      value={selectedLayer.src || ''}
+                      onChange={(event) => updateLayer(selectedLayer.id, { src: event.target.value || null } as Partial<Layer>)}
+                      placeholder="https://..."
+                      className={fieldClass}
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-xs font-bold text-slate-500">Fit</span>
+                    <select
+                      value={selectedLayer.fitMode}
+                      onChange={(event) => updateLayer(selectedLayer.id, { fitMode: event.target.value as 'cover' | 'contain' | 'fill' } as Partial<Layer>)}
+                      className={fieldClass}
+                    >
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                      <option value="fill">Fill</option>
+                    </select>
+                  </label>
+                  {([
+                    ['blur', 0, 24, `${selectedLayer.blur}px`],
+                    ['brightness', 20, 200, `${selectedLayer.brightness}%`],
+                    ['grayscale', 0, 100, `${selectedLayer.grayscale}%`],
+                  ] as const).map(([key, min, max, label]) => (
+                    <label key={key} className="block space-y-2">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-xs font-bold capitalize text-slate-500">{key}</span>
+                        <span className="text-xs font-black text-indigo-600">{label}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        value={selectedLayer[key]}
+                        onChange={(event) => updateLayer(selectedLayer.id, { [key]: Number(event.target.value) } as Partial<Layer>)}
+                        className="w-full accent-indigo-600"
+                      />
+                    </label>
+                  ))}
                 </>
               )}
             </section>

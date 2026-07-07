@@ -3,20 +3,14 @@ import { toBlob, toPng } from 'html-to-image';
 import { Copy, Download, Loader2, MessageCircle, Minus, PackageCheck, Plus, RotateCcw } from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaTiktok, FaXTwitter, FaYoutube } from 'react-icons/fa6';
 import { Toaster, toast } from 'sonner';
-import { INITIAL_CONFIG, CommentConfig, BulkMessage, Layer, Platform, VideoExportFormat } from './types';
-import FacebookCard from './components/FacebookCard';
-import YouTubeCard from './components/YouTubeCard';
-import TikTokCard from './components/TikTokCard';
-import TwitterCard from './components/TwitterCard';
-import InstagramCard from './components/InstagramCard';
-import BubbleChatCard from './components/BubbleChatCard';
-import TextOverlayCard from './components/TextOverlayCard';
+import { INITIAL_CONFIG, CommentConfig, BulkMessage, Layer, LayerActionBlock, Platform, VideoExportFormat } from './types';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { RightInspector } from './components/RightInspector';
 import { TimelineDock } from './components/TimelineDock';
+import { CanvasLayerRenderer } from './components/canvas/CanvasLayerRenderer';
 import { Video, Image as ImageIcon, Type as TextIcon } from 'lucide-react';
-import { composeLayerTransform, getLayerMotion, progressToFrame } from './utils/motionEngine';
+import { progressToFrame } from './utils/motionEngine';
 import { usePreviewRuntime } from './utils/previewRuntime';
 
 const platformOptions: Array<{
@@ -34,6 +28,31 @@ const platformOptions: Array<{
   { value: 'text', label: 'Text Overlay', icon: <TextIcon size={18} strokeWidth={2.4} />, color: 'text-indigo-600' },
 ];
 
+type AddLayerKind = 'text' | 'shape' | 'image';
+
+const createDefaultLayerActions = (layerId: string): LayerActionBlock[] => [
+  {
+    id: `${layerId}-in-action`,
+    kind: 'in',
+    name: 'Masuk',
+    style: 'slide-up',
+    startFrame: 0,
+    durationFrames: 42,
+    easingPreset: 'ease-out',
+    intensity: 0.8,
+  },
+  {
+    id: `${layerId}-out-action`,
+    kind: 'out',
+    name: 'Keluar',
+    style: 'fade-scale',
+    startFrame: 86,
+    durationFrames: 34,
+    easingPreset: 'ease-in',
+    intensity: 1,
+  },
+];
+
 const App: React.FC = () => {
   const initialTab = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'animation'
     ? 'animation'
@@ -41,8 +60,7 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<CommentConfig>(INITIAL_CONFIG);
   const [zoom, setZoom] = useState(1.15);
   const previewRef = useRef<HTMLDivElement>(null);
-  const cardPreviewRef = useRef<HTMLDivElement>(null);
-  const contentPreviewRef = useRef<HTMLSpanElement>(null);
+  const previewLayerElementsRef = useRef(new Map<string, HTMLElement>());
   const bulkExportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
@@ -153,6 +171,14 @@ const App: React.FC = () => {
     setConfig(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  const registerPreviewLayerTarget = useCallback((layerId: string, element: HTMLElement | null) => {
+    if (element) {
+      previewLayerElementsRef.current.set(layerId, element);
+      return;
+    }
+    previewLayerElementsRef.current.delete(layerId);
+  }, []);
+
   const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
     setConfig(prev => ({
       ...prev,
@@ -231,6 +257,138 @@ const App: React.FC = () => {
         },
       };
     });
+  }, []);
+
+  const addCanvasLayer = useCallback((kind: AddLayerKind) => {
+    const id = `layer-${kind}-${Date.now()}`;
+
+    setConfig(prev => {
+      const zIndex = Math.max(...prev.canvas.layers.map(layer => layer.zIndex), 0) + 10;
+      const base = {
+        id,
+        visible: true,
+        zIndex,
+        x: 140,
+        y: 140,
+        rotation: 0,
+        opacity: 1,
+        delayFrames: 0,
+        staggerFrames: 0,
+        motionBlur: false,
+        actionBlocks: createDefaultLayerActions(id),
+      };
+
+      let layer: Layer;
+      if (kind === 'text') {
+        layer = {
+          ...base,
+          type: 'text',
+          name: 'Text Layer',
+          width: Math.min(520, Math.max(260, prev.width - 160)),
+          height: 140,
+          text: 'New text layer',
+          textFont: 'outfit',
+          textWeight: 'black',
+          textAlign: 'center',
+          textColor: '#0f172a',
+          textStrokeColor: '#ffffff',
+          textStrokeWidth: 0,
+          textShadow: false,
+          textTemplate: 'minimal',
+          textSize: 34,
+          textLetterSpacing: 0,
+          textLineHeight: 110,
+          backgroundColor: 'rgba(255,255,255,0.86)',
+          paddingX: 18,
+          paddingY: 12,
+          borderRadius: 18,
+        } as Layer;
+      } else if (kind === 'shape') {
+        layer = {
+          ...base,
+          type: 'shape',
+          name: 'Shape Layer',
+          width: 220,
+          height: 120,
+          shapeKind: 'rectangle',
+          fillColor: '#6366f1',
+          strokeColor: '#312e81',
+          strokeWidth: 0,
+          borderRadius: 28,
+          lineOrientation: 'horizontal',
+        } as Layer;
+      } else {
+        layer = {
+          ...base,
+          type: 'image',
+          name: 'Image Layer',
+          width: 260,
+          height: 180,
+          src: null,
+          fitMode: 'cover',
+          blur: 0,
+          brightness: 100,
+          grayscale: 0,
+        } as Layer;
+      }
+
+      return {
+        ...prev,
+        canvas: {
+          ...prev.canvas,
+          layers: [...prev.canvas.layers, layer],
+        },
+      };
+    });
+
+    setSelectedLayerId(id);
+    setActiveTab('canvas');
+  }, []);
+
+  const duplicateLayer = useCallback((id: string) => {
+    const nextId = `${id}-copy-${Date.now()}`;
+    setConfig(prev => {
+      const source = prev.canvas.layers.find(layer => layer.id === id);
+      if (!source || source.type === 'background') return prev;
+      const zIndex = Math.max(...prev.canvas.layers.map(layer => layer.zIndex), 0) + 10;
+      const clone = {
+        ...source,
+        id: nextId,
+        name: `${source.name} Copy`,
+        x: source.x + 24,
+        y: source.y + 24,
+        zIndex,
+        actionBlocks: source.actionBlocks?.map(action => ({
+          ...action,
+          id: `${nextId}-${action.kind}-action`,
+        })) ?? createDefaultLayerActions(nextId),
+      } as Layer;
+
+      return {
+        ...prev,
+        canvas: {
+          ...prev.canvas,
+          layers: [...prev.canvas.layers, clone],
+        },
+      };
+    });
+    setSelectedLayerId(nextId);
+  }, []);
+
+  const deleteLayer = useCallback((id: string) => {
+    if (['layer-bg-auto', 'layer-card-auto', 'layer-overlay-auto'].includes(id)) {
+      toast.error('Default layer cannot be deleted.');
+      return;
+    }
+
+    setConfig(prev => ({
+      ...prev,
+      canvas: {
+        ...prev.canvas,
+        layers: prev.canvas.layers.filter(layer => layer.id !== id),
+      },
+    }));
+    setSelectedLayerId('layer-card-auto');
   }, []);
 
   const updateBulkMessage = useCallback((index: number, patch: Partial<BulkMessage>) => {
@@ -362,8 +520,6 @@ const App: React.FC = () => {
 
   const layerVisible = (id: string) => config.canvas.layers.find(layer => layer.id === id)?.visible !== false;
   const isBackgroundVisible = layerVisible('layer-bg-auto');
-  const isCardVisible = layerVisible('layer-card-auto');
-  const isContentVisible = layerVisible('layer-overlay-auto');
 
   const applyBulkMessageToConfig = (message?: BulkMessage): CommentConfig => {
     if (!message) return config;
@@ -380,21 +536,13 @@ const App: React.FC = () => {
   };
 
   const activeConfig = applyBulkMessageToConfig(activeBulkMessage);
-  const selectedLayer = config.canvas.layers.find(layer => layer.id === selectedLayerId);
-  const cardLayer = config.canvas.layers.find(layer => layer.id === 'layer-card-auto');
-  const contentLayer = config.canvas.layers.find(layer => layer.id === 'layer-overlay-auto');
-  const previewLayerTargets = useMemo(() => [
-    {
-      layerId: 'layer-card-auto',
-      ref: cardPreviewRef,
-      transformMode: 'composed' as const,
-    },
-    {
-      layerId: 'layer-overlay-auto',
-      ref: contentPreviewRef,
-      transformMode: 'motion-only' as const,
-    },
-  ], []);
+  const previewLayerTargets = useMemo(() => config.canvas.layers
+    .filter(layer => layer.type !== 'background')
+    .map(layer => ({
+      layerId: layer.id,
+      getElement: () => previewLayerElementsRef.current.get(layer.id) ?? null,
+      transformMode: layer.id === 'layer-overlay-auto' ? 'motion-only' as const : 'composed' as const,
+    })), [config.canvas.layers]);
   const showSelectionChrome = !isCapturingPreview;
   const previewFrame = progressToFrame(timelineProgress, config.animationDuration || 2, 60);
   const motionContext = {
@@ -403,8 +551,6 @@ const App: React.FC = () => {
     durationInFrames: Math.max(60, Math.round((config.animationDuration || 2) * 60)),
     config,
   };
-  const cardMotion = getLayerMotion(cardLayer, motionContext);
-  const contentMotion = getLayerMotion(contentLayer, motionContext);
   const previewConfig: CommentConfig = isBackgroundVisible
     ? activeConfig
     : { ...activeConfig, backgroundType: 'transparent' };
@@ -429,44 +575,6 @@ const App: React.FC = () => {
     if (safeSelectedSceneIndex <= 0) return;
     updateBulkMessage(safeSelectedSceneIndex - 1, patch);
   }, [safeSelectedSceneIndex, updateBulkMessage]);
-
-  const renderContentNode = (content: string, attachRuntimeRef = true) => {
-    if (!isContentVisible) return '';
-    if (!contentLayer) return undefined;
-    return (
-      <span
-        ref={attachRuntimeRef ? contentPreviewRef : undefined}
-        className="inline-block max-w-full"
-        style={{
-          opacity: (contentLayer.opacity ?? 1) * contentMotion.opacity,
-          transform: contentMotion.transform,
-          filter: contentMotion.filter || undefined,
-          transformOrigin: 'center',
-          transition: 'none',
-          willChange: 'transform, opacity, filter',
-          backfaceVisibility: 'hidden',
-          overflowWrap: 'anywhere',
-        }}
-      >
-        {content}
-      </span>
-    );
-  };
-
-  const renderCardForPlatform = (message?: BulkMessage, forceContentVisible = true, attachRuntimeRef = true) => {
-    const overriddenConfig = applyBulkMessageToConfig(message);
-    const contentNode = forceContentVisible ? renderContentNode(overriddenConfig.content, attachRuntimeRef) : '';
-    switch (config.platform) {
-      case 'facebook': return <FacebookCard config={overriddenConfig} contentNode={contentNode} />;
-      case 'youtube': return <YouTubeCard config={overriddenConfig} contentNode={contentNode} />;
-      case 'tiktok': return <TikTokCard config={overriddenConfig} contentNode={contentNode} />;
-      case 'twitter': return <TwitterCard config={overriddenConfig} contentNode={contentNode} />;
-      case 'instagram': return <InstagramCard config={overriddenConfig} contentNode={contentNode} />;
-      case 'dm': return <BubbleChatCard config={overriddenConfig} messageOverride={forceContentVisible ? message?.content : ''} />;
-      case 'text': return <TextOverlayCard config={overriddenConfig} contentNode={contentNode} />;
-      default: return null;
-    }
-  };
 
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden bg-[#e8edf4] font-sans text-slate-950 md:flex-row">
@@ -624,41 +732,19 @@ const App: React.FC = () => {
               duration={config.animationDuration}
               onCanvasSelect={() => setSelectedLayerId('layer-bg-auto')}
             >
-              <div
-                ref={cardPreviewRef}
-                onPointerDown={(event) => beginLayerDrag('layer-card-auto', event)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelectedLayerId('layer-card-auto');
-                }}
-                className={`group/layer relative inline-flex max-w-full touch-none justify-center rounded-[26px] ${
-                  draggingLayerId === 'layer-card-auto' ? 'cursor-grabbing' : 'cursor-grab'
-                } ${
-                  showSelectionChrome && selectedLayerId === 'layer-card-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-white' : ''
-                }`}
-                style={{
-                  transform: composeLayerTransform(cardLayer, cardMotion),
-                  opacity: (cardLayer?.opacity ?? 1) * cardMotion.opacity,
-                  filter: cardMotion.filter || undefined,
-                  transformOrigin: 'center',
-                  transition: 'none',
-                  willChange: 'transform, opacity, filter',
-                  backfaceVisibility: 'hidden',
-                }}
-              >
-                {showSelectionChrome && selectedLayerId === 'layer-card-auto' && (
-                  <div className="pointer-events-none absolute -top-9 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-950 px-3 py-1.5 text-[11px] font-black text-white shadow-lg">
-                    <span>Mockup card</span>
-                    <span className="h-1 w-1 rounded-full bg-slate-500" />
-                    <span>{selectedLayer?.x ?? cardLayer?.x}px, {selectedLayer?.y ?? cardLayer?.y}px</span>
-                  </div>
-                )}
-                {isCardVisible ? renderCardForPlatform(activeBulkMessage, isContentVisible) : (
-                  <div className="flex min-h-[220px] w-full items-center justify-center rounded-[26px] border border-dashed border-slate-300 bg-white/60 px-8 text-center text-sm font-bold text-slate-400">
-                    Mockup card layer hidden
-                  </div>
-                )}
-              </div>
+              <CanvasLayerRenderer
+                config={config}
+                activeConfig={activeConfig}
+                activeBulkMessage={activeBulkMessage}
+                layers={config.canvas.layers}
+                selectedLayerId={selectedLayerId}
+                setSelectedLayerId={setSelectedLayerId}
+                draggingLayerId={draggingLayerId}
+                showSelectionChrome={showSelectionChrome}
+                motionContext={motionContext}
+                registerLayerTarget={registerPreviewLayerTarget}
+                beginLayerDrag={beginLayerDrag}
+              />
             </PreviewCanvas>
           </section>
 
@@ -685,6 +771,9 @@ const App: React.FC = () => {
             updateLayer={updateLayer}
             moveLayer={moveLayer}
             resetLayerTransform={resetLayerTransform}
+            addLayer={addCanvasLayer}
+            duplicateLayer={duplicateLayer}
+            deleteLayer={deleteLayer}
           />
         </div>
 
@@ -712,7 +801,20 @@ const App: React.FC = () => {
             style={{ left: '-9999px', top: '-9999px' }}
           >
             <div ref={bulkExportRef} style={{ width: config.width }}>
-              {isCardVisible ? renderCardForPlatform(config.bulkMessages[bulkExportIndex], isContentVisible, false) : null}
+              <CanvasLayerRenderer
+                config={config}
+                activeConfig={applyBulkMessageToConfig(config.bulkMessages[bulkExportIndex])}
+                activeBulkMessage={config.bulkMessages[bulkExportIndex]}
+                layers={config.canvas.layers}
+                selectedLayerId={selectedLayerId}
+                setSelectedLayerId={setSelectedLayerId}
+                draggingLayerId={null}
+                showSelectionChrome={false}
+                motionContext={motionContext}
+                registerLayerTarget={() => undefined}
+                beginLayerDrag={() => undefined}
+                forExport
+              />
             </div>
           </div>
         )}

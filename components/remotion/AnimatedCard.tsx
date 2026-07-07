@@ -10,6 +10,7 @@ import InstagramCard from '../InstagramCard';
 import BubbleChatCard from '../BubbleChatCard';
 import TextOverlayCard from '../TextOverlayCard';
 import { AnimatedText } from './AnimatedText';
+import { renderLayerContent } from '../canvas/renderLayerContent';
 
 interface Props {
   config: CommentConfig;
@@ -42,8 +43,14 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const overriddenConfig = applyBulkMessageToConfig(config, message);
-  const cardLayer = overriddenConfig.canvas.layers.find(layer => layer.id === 'layer-card-auto');
-  const contentLayer = overriddenConfig.canvas.layers.find(layer => layer.id === 'layer-overlay-auto');
+  const orderedLayers = [...overriddenConfig.canvas.layers].sort((a, b) => a.zIndex - b.zIndex);
+  const cardLayer = orderedLayers.find(layer => layer.id === 'layer-card-auto');
+  const contentLayer = orderedLayers.find(layer => layer.id === 'layer-overlay-auto');
+  const standaloneLayers = orderedLayers.filter(layer =>
+    layer.type !== 'background' &&
+    layer.id !== 'layer-card-auto' &&
+    layer.id !== 'layer-overlay-auto'
+  );
   const effectiveFrame = getEffectiveFrame(frame, durationInFrames, overriddenConfig.animationLoop || 'loop');
   const motionContext = {
     frame: effectiveFrame,
@@ -98,21 +105,66 @@ export const AnimatedCard: React.FC<Props> = ({ config, message }) => {
     }
   };
 
+  const renderStandaloneLayer = (layer: typeof standaloneLayers[number]) => {
+    const motion = getLayerMotion(layer, motionContext);
+    return (
+      <div
+        key={layer.id}
+        style={{
+          position: 'absolute',
+          left: 80,
+          top: 80,
+          width: layer.width,
+          height: layer.height,
+          opacity: (layer.opacity ?? 1) * motion.opacity,
+          transform: composeLayerTransform(layer, motion),
+          transformOrigin: 'center',
+          filter: motion.filter || undefined,
+          overflow: 'hidden',
+          borderRadius: layer.type === 'shape' ? layer.borderRadius : layer.type === 'text' ? layer.borderRadius : 18,
+          zIndex: layer.zIndex,
+          willChange: 'transform, opacity, filter',
+          backfaceVisibility: 'hidden',
+        }}
+      >
+        <div style={{ width: layer.width, height: layer.height }}>
+          {renderLayerContent(layer)}
+        </div>
+      </div>
+    );
+  };
+
+  const canvasMinHeight = standaloneLayers.reduce((height, layer) => (
+    Math.max(height, layer.y + layer.height)
+  ), 0);
+
   return (
     <div
       style={{
-        opacity: (cardLayer?.opacity ?? 1) * cardMotion.opacity,
-        transform: composeLayerTransform(cardLayer, cardMotion),
+        position: 'relative',
         width: config.width,
         display: 'flex',
         justifyContent: 'center',
-        alignItems: 'center',
-        willChange: 'transform, opacity, filter',
-        backfaceVisibility: 'hidden',
-        ...(cardMotion.filter ? { filter: cardMotion.filter } : {}),
+        minHeight: canvasMinHeight > 0 ? canvasMinHeight : undefined,
       }}
     >
-      {renderCard()}
+      <div
+        style={{
+          opacity: (cardLayer?.opacity ?? 1) * cardMotion.opacity,
+          transform: composeLayerTransform(cardLayer, cardMotion),
+          position: 'relative',
+          zIndex: cardLayer?.zIndex ?? 10,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          willChange: 'transform, opacity, filter',
+          backfaceVisibility: 'hidden',
+          ...(cardMotion.filter ? { filter: cardMotion.filter } : {}),
+        }}
+      >
+        {renderCard()}
+      </div>
+      {standaloneLayers.map(renderStandaloneLayer)}
     </div>
   );
 };

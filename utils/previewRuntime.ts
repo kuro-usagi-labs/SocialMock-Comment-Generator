@@ -7,7 +7,8 @@ type PreviewElementRef = RefObject<HTMLElement | null>;
 
 export interface PreviewLayerTarget {
   layerId: string;
-  ref: PreviewElementRef;
+  ref?: PreviewElementRef;
+  getElement?: () => HTMLElement | null;
   transformMode?: 'composed' | 'motion-only';
   originX?: number;
   originY?: number;
@@ -56,7 +57,7 @@ export const usePreviewRuntime = ({
     };
 
     targets.forEach((target) => {
-      const element = target.ref.current;
+      const element = target.getElement?.() ?? target.ref?.current ?? null;
       const layer = layerByIdRef.current.get(target.layerId);
       if (!element || !layer) return;
 
