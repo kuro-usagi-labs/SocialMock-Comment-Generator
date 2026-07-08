@@ -23,7 +23,7 @@ export const RemotionRoot: React.FC = () => {
             durationInFrames: Math.max(60, Math.round((config.animationDuration || 2) * 60)),
             fps: 60,
             width: config.width || 1080,
-            height: config.width || 1080,
+            height: config.height || config.width || 1080,
           };
         }}
       />

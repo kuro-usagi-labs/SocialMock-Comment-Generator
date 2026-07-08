@@ -28,6 +28,7 @@ import {
 } from '../types';
 import { BulkGenerator } from './BulkGenerator';
 import { createRandomProfiles } from '../utils/profileUtils';
+import { BACKGROUND_GRADIENT_PRESETS } from '../utils/backgroundLayer';
 
 interface ControlPanelProps {
   config: CommentConfig;
@@ -75,10 +76,10 @@ const textTransforms: Array<{ value: TextTransform; label: string }> = [
 ];
 
 const gradients = [
-  'from-blue-400 to-purple-500',
-  'from-pink-500 to-orange-400',
-  'from-green-400 to-cyan-500',
-  'from-gray-700 to-gray-900',
+  { label: 'Blue → Purple', color1: '#60a5fa', color2: '#a855f7' },
+  { label: 'Pink → Orange', color1: '#ec4899', color2: '#fb923c' },
+  { label: 'Green → Cyan', color1: '#4ade80', color2: '#06b6d4' },
+  { label: 'Dark', color1: '#374151', color2: '#111827' },
 ];
 
 const navItems = [
@@ -583,15 +584,16 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
 
             {config.backgroundType === 'gradient' && (
               <div className="grid grid-cols-4 gap-2">
-                {gradients.map(gradient => (
+                {BACKGROUND_GRADIENT_PRESETS.map(gradient => (
                   <button
-                    key={gradient}
+                    key={gradient.value}
                     type="button"
-                    onClick={() => update('backgroundColor', gradient)}
-                    className={`h-12 rounded-lg bg-gradient-to-r shadow-sm transition-transform hover:scale-105 ${gradient} ${
-                      config.backgroundColor === gradient ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
+                    onClick={() => update('backgroundColor', gradient.value)}
+                    className={`h-12 rounded-lg shadow-sm transition-transform hover:scale-105 ${
+                      config.backgroundColor === gradient.value ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
                     }`}
-                    aria-label={`Use ${gradient} gradient`}
+                    style={{ backgroundImage: gradient.value }}
+                    aria-label={`Use ${gradient.label} gradient`}
                   />
                 ))}
               </div>

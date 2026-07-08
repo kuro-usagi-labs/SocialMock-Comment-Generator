@@ -17,6 +17,7 @@ export type TextAlign = 'left' | 'center' | 'right';
 export type TextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 export type EasingPreset = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce' | 'elastic' | 'back' | 'spring' | 'custom';
 export type AnimationLoop = 'once' | 'loop' | 'ping-pong';
+export type LayerActionProperty = 'opacity' | 'x' | 'y' | 'scale' | 'rotate' | 'blur';
 
 export interface BezierPoints { x1: number; y1: number; x2: number; y2: number; }
 
@@ -25,6 +26,12 @@ export interface BezierPoints { x1: number; y1: number; x2: number; y2: number; 
 // ---------------------------------------------------------------
 export type LayerType = 'background' | 'card' | 'text' | 'shape' | 'image';
 export type LayerActionKind = 'in' | 'out' | 'emphasis';
+
+export interface LayerActionPropertyValue {
+  property: LayerActionProperty;
+  from: number;
+  to: number;
+}
 
 export interface LayerActionBlock {
   id: string;
@@ -36,6 +43,7 @@ export interface LayerActionBlock {
   easingPreset: EasingPreset;
   customBezier?: BezierPoints;
   intensity: number;
+  properties?: LayerActionPropertyValue[];
 }
 
 export interface BaseLayer {
@@ -156,6 +164,7 @@ export interface CommentConfig {
   showStats: boolean; // Show the like/reply count row/icons
   fontSize: number; // in pixels (base)
   width: CardWidth;
+  height?: number; // Output video height in px; defaults to width when omitted
   padding: PaddingSize;
   backgroundType: BackgroundType;
   backgroundColor: string;
@@ -193,6 +202,48 @@ export interface CommentConfig {
   canvas: Canvas;
 }
 
+export interface MotionScene {
+  id: string;
+  name: string;
+  config: CommentConfig;
+}
+
+export interface MotionDocumentMetadata {
+  createdAt: string;
+  updatedAt: string;
+  appVersion: string;
+  sourceTemplateId?: string;
+  thumbnail?: string;
+}
+
+export interface MotionDocumentSettings {
+  fps: number;
+  defaultDuration: number;
+  export: {
+    format: VideoExportFormat;
+    transparentBackground: boolean;
+  };
+}
+
+export interface MotionDocument {
+  id: string;
+  title: string;
+  version: number;
+  metadata: MotionDocumentMetadata;
+  settings: MotionDocumentSettings;
+  activeSceneId: string;
+  scenes: MotionScene[];
+}
+
+export type EditorSelectionType = 'canvas' | 'scene' | 'layer' | 'action';
+
+export interface EditorSelection {
+  type: EditorSelectionType;
+  ids: string[];
+  layerId?: string;
+  sceneId?: string;
+}
+
 export const INITIAL_CONFIG: CommentConfig = {
   platform: 'twitter',
   theme: 'light',
@@ -209,6 +260,7 @@ export const INITIAL_CONFIG: CommentConfig = {
   showStats: true,
   fontSize: 16,
   width: 600,
+  height: 600,
   padding: 'normal',
   backgroundType: 'transparent',
   backgroundColor: 'from-blue-400 to-purple-500',

@@ -13,6 +13,7 @@ try {
 }
 
 let mainWindow;
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -49,6 +50,141 @@ function createWindow() {
 
 // Cache the Remotion bundle path so we only bundle once per session
 let cachedBundlePath = null;
+
+function getEnvValue(name) {
+  if (process.env[name]) return process.env[name];
+  const envPaths = [
+    path.join(__dirname, '.env'),
+    path.join(process.cwd(), '.env'),
+  ];
+  for (const envPath of envPaths) {
+    try {
+      if (!fs.existsSync(envPath)) continue;
+      const content = fs.readFileSync(envPath, 'utf8');
+      const line = content.split(/\r?\n/).find(entry => entry.trim().startsWith(`${name}=`));
+      if (!line) continue;
+      return line.slice(line.indexOf('=') + 1).trim().replace(/^["']|["']$/g, '');
+    } catch (e) {
+      console.warn(`[Env] Could not read ${envPath}:`, e.message);
+    }
+  }
+  return '';
+}
+
+function buildGeminiPrompt({ baseText, count, language, tone }) {
+  const langLabel = language === 'id' ? 'Bahasa Indonesia' : 'English';
+  const toneDesc = {
+    casual: 'santai dan natural, seperti chat biasa antar teman',
+    formal: 'sopan dan formal, seperti chat profesional',
+    slang: 'gaul, pakai bahasa slang/singkatan anak muda',
+  };
+
+  return `Kamu adalah generator variasi kalimat untuk DM (Direct Message) media sosial.
+
+Tugas: Buatkan ${count} variasi kalimat DM yang maknanya sama atau mirip dengan "${baseText}".
+
+Aturan:
+- Bahasa: ${langLabel}
+- Gaya bahasa: ${toneDesc[tone] || toneDesc.casual}
+- Setiap variasi harus berbeda satu sama lain (jangan ada yang sama persis)
+- Panjang kalimat bervariasi (ada yang pendek, ada yang lebih panjang)
+- Boleh pakai emoji tapi jangan berlebihan (1-2 emoji per kalimat, atau tanpa emoji)
+- Kalimat harus terdengar natural seperti pesan DM asli dari orang sungguhan
+- Jangan beri nomor atau bullet point
+
+PENTING: Balas HANYA dalam format JSON array of strings, tanpa penjelasan apapun.
+Contoh format: ["variasi 1", "variasi 2", "variasi 3"]`;
+}
+
+function parseGeminiStringArray(text, count) {
+  let cleanedText = String(text || '').trim();
+  if (cleanedText.startsWith('```')) {
+    cleanedText = cleanedText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  }
+
+  try {
+    const parsed = JSON.parse(cleanedText);
+    if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+      return parsed.slice(0, count);
+    }
+  } catch (e) {
+    const matches = cleanedText.match(/"([^"]+)"/g);
+    if (matches && matches.length > 0) {
+      return matches.map(item => item.replace(/"/g, '')).slice(0, count);
+    }
+  }
+
+  throw new Error('Could not parse AI response into messages');
+}
+
+async function generateVariationsWithGemini(params) {
+  const apiKey = getEnvValue('GEMINI_API_KEY');
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is missing. Add it to .env or your environment.');
+  }
+
+  const baseText = String(params?.baseText || '').trim();
+  const count = Math.min(20, Math.max(1, Number(params?.count) || 5));
+  const language = params?.language === 'en' ? 'en' : 'id';
+  const tone = ['casual', 'formal', 'slang'].includes(params?.tone) ? params.tone : 'casual';
+  if (!baseText) {
+    throw new Error('Base text is required.');
+  }
+
+  const prompt = buildGeminiPrompt({ baseText, count, language, tone });
+  let delay = 2000;
+  let lastError;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 1.0,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 2048,
+        },
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error('No response from Gemini API');
+      return parseGeminiStringArray(text, count);
+    }
+
+    const errorBody = await response.text();
+    lastError = new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+    if (response.status !== 429 || attempt === 2) {
+      console.error('[Gemini] API error:', errorBody);
+      throw lastError;
+    }
+
+    console.warn(`[Gemini] 429 error. Retrying in ${delay}ms...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    delay *= 2;
+  }
+
+  throw lastError || new Error('Gemini API error');
+}
+
+function cloneConfigWithTransparentBackground(config) {
+  return {
+    ...config,
+    greenscreen: false,
+    backgroundType: 'transparent',
+    canvas: {
+      ...config.canvas,
+      layers: (config.canvas?.layers || []).map(layer =>
+        layer.type === 'background' ? { ...layer, visible: false } : layer
+      ),
+    },
+  };
+}
 
 /**
  * Recursively copy a directory, handling ASAR transparently.
@@ -348,6 +484,15 @@ async function renderTransparentFrames({
  * Main video render handler using Remotion's native renderMedia().
  * Replaces the old frame-by-frame screenshot pipeline.
  */
+ipcMain.handle('generate-variations', async (event, params) => {
+  try {
+    return await generateVariationsWithGemini(params);
+  } catch (error) {
+    console.error('[Gemini] Generate variations failed:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('render-video', async (event, options) => {
   if (!mainWindow) return { success: false, error: 'No main window' };
 
@@ -399,7 +544,7 @@ ipcMain.handle('render-video', async (event, options) => {
           'node_modules', '@remotion', 'compositor-win32-x64-msvc')
       : null;
     const renderConfig = needsAlpha
-      ? { ...config, greenscreen: false, backgroundType: 'transparent' }
+      ? cloneConfigWithTransparentBackground(config)
       : config;
 
     const composition = await selectComposition({
@@ -415,7 +560,7 @@ ipcMain.handle('render-video', async (event, options) => {
       fps,
       durationInFrames,
       width: renderConfig.width || 1080,
-      height: renderConfig.width || 1080, // square by default
+      height: renderConfig.height || renderConfig.width || 1080,
     };
 
     // Use Electron's embedded Chromium for rendering

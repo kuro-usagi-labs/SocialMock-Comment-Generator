@@ -1,6 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CommentConfig } from '../types';
+import { resolveCanvasBackgroundStyle } from '../utils/backgroundLayer';
+
+import { ResizeHandle } from './canvas/CanvasLayerFrame';
 
 interface PreviewCanvasProps {
   config: CommentConfig;
@@ -14,6 +17,7 @@ interface PreviewCanvasProps {
   progress?: number;
   duration?: number;
   onCanvasSelect?: () => void;
+  beginLayerResize?: (id: string, handle: ResizeHandle, event: React.PointerEvent<Element>) => void;
   children: React.ReactNode;
 }
 
@@ -36,16 +40,7 @@ const PreviewCanvasComponent: React.FC<PreviewCanvasProps> = ({
     ? Math.min(zoom, Math.max(0.25, (viewportWidth - 88) / config.width))
     : zoom;
 
-  const getBackgroundClass = () => {
-    if (config.backgroundType === 'transparent') return 'bg-transparent';
-    if (config.backgroundType === 'gradient') return `bg-gradient-to-r ${config.backgroundColor}`;
-    return '';
-  };
-
-  const getBackgroundStyle = () => {
-    if (config.backgroundType === 'solid') return { backgroundColor: config.backgroundColor };
-    return {};
-  };
+  const background = resolveCanvasBackgroundStyle(config);
 
   return (
     <div 
@@ -74,7 +69,7 @@ const PreviewCanvasComponent: React.FC<PreviewCanvasProps> = ({
         )}
 
         <div
-          className={`rounded-lg ${mode === 'animation' ? '' : 'transition-transform'} ${config.backgroundType === 'transparent' ? '' : 'shadow-[0_28px_70px_rgba(15,23,42,0.15)]'}`}
+          className={`rounded-lg ${mode === 'animation' ? '' : 'transition-transform'} ${background.hasVisibleBackground ? 'shadow-[0_28px_70px_rgba(15,23,42,0.15)]' : ''}`}
           style={{ maxWidth: `min(100%, ${config.width * displayZoom}px)` }}
         >
           <div style={{ width: `${config.width * displayZoom}px` }}>
@@ -85,9 +80,16 @@ const PreviewCanvasComponent: React.FC<PreviewCanvasProps> = ({
             >
               <div
                 id="export-container"
-                className={`rounded-[28px] p-8 flex justify-center ${mode === 'animation' ? '' : 'transition'} ${showSelectionChrome && selectedLayerId === 'layer-bg-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-slate-100' : ''} ${getBackgroundClass()}`}
-                style={getBackgroundStyle()}
+                className={`relative overflow-hidden rounded-[28px] p-8 flex justify-center ${mode === 'animation' ? '' : 'transition'} ${showSelectionChrome && selectedLayerId === 'layer-bg-auto' ? 'ring-2 ring-indigo-400 ring-offset-4 ring-offset-slate-100' : ''}`}
+                style={{ backgroundColor: 'transparent' }}
               >
+                {background.hasVisibleBackground && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0"
+                    style={background.style}
+                  />
+                )}
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={config.platform}
@@ -95,7 +97,7 @@ const PreviewCanvasComponent: React.FC<PreviewCanvasProps> = ({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={mode === 'animation' ? { opacity: 1 } : { opacity: 0, y: -10, scale: 0.98 }}
                     transition={{ duration: mode === 'animation' ? 0 : 0.25, ease: "easeOut" }}
-                    className="w-full flex justify-center"
+                    className="relative z-10 w-full flex justify-center"
                   >
                     {children}
                   </motion.div>

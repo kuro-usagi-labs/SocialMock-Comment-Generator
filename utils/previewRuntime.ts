@@ -21,6 +21,7 @@ interface UsePreviewRuntimeOptions {
   progress: number;
   isPlaying: boolean;
   direction: number;
+  pausedLayerIds?: ReadonlySet<string>;
   setProgress: (value: number) => void;
   setIsPlaying: (value: boolean) => void;
   setDirection: (value: number) => void;
@@ -35,6 +36,7 @@ export const usePreviewRuntime = ({
   progress,
   isPlaying,
   direction,
+  pausedLayerIds,
   setProgress,
   setIsPlaying,
   setDirection,
@@ -54,6 +56,7 @@ export const usePreviewRuntime = ({
       fps: 60,
       durationInFrames: Math.max(60, Math.round((config.animationDuration || 2) * 60)),
       config,
+      pausedLayerIds: pausedLayerIds ?? new Set<string>(),
     };
 
     targets.forEach((target) => {
@@ -68,7 +71,7 @@ export const usePreviewRuntime = ({
       element.style.opacity = String((layer.opacity ?? 1) * motion.opacity);
       element.style.filter = motion.filter || '';
     });
-  }, [config, targets]);
+  }, [config, pausedLayerIds, targets]);
 
   const setPreviewProgress = useCallback((value: number) => {
     const next = clampProgress(value);
@@ -98,17 +101,44 @@ export const usePreviewRuntime = ({
 
   useEffect(() => {
     if (!isPlaying) return;
+    if (typeof document === 'undefined') return;
 
+    let resumedFromHidden = false;
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Pause the global clock while the tab is hidden so playback
+        // does not race ahead in the background (CPU/UI sync drift).
+        setIsPlaying(false);
+        resumedFromHidden = true;
+      } else if (resumedFromHidden) {
+        resumedFromHidden = false;
+        setIsPlaying(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isPlaying, setIsPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    let cancelled = false;
     let rafId = 0;
     let lastTime = performance.now();
     let lastUiUpdate = lastTime;
     runtimeDirectionRef.current = direction;
 
     const tick = (time: number) => {
+      if (cancelled) return;
       const deltaSeconds = (time - lastTime) / 1000;
       lastTime = time;
+      // Skip the actual progress advance when no motion-bearing layers are visible —
+      // protects against runaway CPU when pausedLayerIds covers every active layer.
+      const hasMovingLayer = Array.from(pausedLayerIds ?? []).length < layerByIdRef.current.size;
       const duration = Math.max(0.5, config.animationDuration || 2);
-      const delta = (deltaSeconds / duration) * 100 * runtimeDirectionRef.current;
+      const delta = hasMovingLayer ? (deltaSeconds / duration) * 100 * runtimeDirectionRef.current : 0;
       let next = runtimeProgressRef.current + delta;
       let stopPlayback = false;
 
@@ -152,13 +182,17 @@ export const usePreviewRuntime = ({
     };
 
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
   }, [
     applyProgress,
     config.animationDuration,
     config.animationLoop,
     direction,
     isPlaying,
+    pausedLayerIds,
     setDirection,
     setIsPlaying,
     setProgress,

@@ -1,4 +1,5 @@
 import { VideoExportFormat, CommentConfig } from './types';
+import { GenerateVariationsParams } from './services/geminiService';
 
 interface RenderVideoOptions {
   config: CommentConfig;
@@ -30,6 +31,7 @@ interface ElectronAPI {
   isElectron: boolean;
   renderVideo: (options: RenderVideoOptions) => Promise<RenderResult>;
   onRenderProgress: (callback: (data: RenderProgressData) => void) => () => void;
+  generateVariations: (params: GenerateVariationsParams) => Promise<string[]>;
   // Legacy
   startVideoExport: () => Promise<boolean>;
   sendFrame: (frameIndex: number, dataUrl: string) => Promise<boolean>;

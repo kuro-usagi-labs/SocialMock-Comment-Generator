@@ -15,8 +15,11 @@ interface TimelineDockProps {
   restartPlayback: () => void;
   update: (key: keyof CommentConfig, value: any) => void;
   selectedLayerId: string;
+  selectedActionId: string | null;
   setSelectedLayerId: (id: string) => void;
+  selectAction: (layerId: string, actionId: string) => void;
   updateLayer: (id: string, patch: Partial<Layer>) => void;
+  reorderLayer: (id: string, targetIndex: number) => void;
   selectedSceneIndex: number;
   setSelectedSceneIndex: (index: number) => void;
 }
@@ -30,6 +33,7 @@ const actionTone: Record<LayerActionBlock['kind'], string> = {
 };
 
 const minActionFrames = 8;
+const timelineInsetPx = 12;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -82,8 +86,11 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
   restartPlayback,
   update,
   selectedLayerId,
+  selectedActionId,
   setSelectedLayerId,
+  selectAction,
   updateLayer,
+  reorderLayer,
   selectedSceneIndex,
   setSelectedSceneIndex,
 }) => {
@@ -92,7 +99,52 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
   const markers = [0, 0.25, 0.5, 0.75, 1];
   const currentSecond = (duration * progress) / 100;
   const orderedLayers = [...config.canvas.layers].sort((a, b) => b.zIndex - a.zIndex);
-  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const reorderableTimelineIndices = orderedLayers
+    .filter(layer => layer.id !== 'layer-bg-auto')
+    .map((layer, visualIndex, items) => ({
+      id: layer.id,
+      visualIndex,
+      modelIndex: items.length - 1 - visualIndex,
+    }));
+  const [tlDragRowId, setTlDragRowId] = useState<string | null>(null);
+  const [tlDragOverIndex, setTlDragOverIndex] = useState<number | null>(null);
+
+  const tlRowOnPointerDown = (layerId: string, event: React.PointerEvent, sourceVisualIndex: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTlDragRowId(layerId);
+    setTlDragOverIndex(sourceVisualIndex);
+    let latestVisualIndex = sourceVisualIndex;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      let bestIndex = sourceVisualIndex;
+      let bestDist = Infinity;
+      reorderableTimelineIndices.forEach(({ id, visualIndex }) => {
+        const rowEl = document.getElementById(`tl-layer-row-${id}`);
+        if (!rowEl) return;
+        const rect = rowEl.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const dist = Math.abs(moveEvent.clientY - midY);
+        if (dist < bestDist) { bestDist = dist; bestIndex = visualIndex; }
+      });
+      latestVisualIndex = bestIndex;
+      setTlDragOverIndex(bestIndex);
+    };
+
+    const handleUp = () => {
+      const target = reorderableTimelineIndices.find(item => item.visualIndex === latestVisualIndex);
+      if (target && latestVisualIndex !== sourceVisualIndex) {
+        reorderLayer(layerId, target.modelIndex);
+      }
+      setTlDragRowId(null);
+      setTlDragOverIndex(null);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp, { once: true });
+  };
 
   const motionContext = useMemo(() => ({
     frame: Math.round((progress / 100) * durationFrames),
@@ -113,6 +165,38 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     updateLayer(layer.id, { actionBlocks: nextActions } as Partial<Layer>);
   };
 
+  const setProgressFromClientX = (clientX: number, timeline: HTMLElement) => {
+    const bounds = timeline.getBoundingClientRect();
+    const usableWidth = Math.max(1, bounds.width - timelineInsetPx * 2);
+    const nextProgress = clamp(((clientX - bounds.left - timelineInsetPx) / usableWidth) * 100, 0, 100);
+    setProgress(nextProgress);
+  };
+
+  const beginPlayheadScrub = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveTab('animation');
+    setIsPlaying(false);
+
+    const timeline = event.currentTarget.closest('[data-timeline-track="true"]') as HTMLElement | null;
+    if (!timeline) return;
+
+    setProgressFromClientX(event.clientX, timeline);
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      setProgressFromClientX(moveEvent.clientX, timeline);
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+  };
+
   const beginActionDrag = (
     event: React.PointerEvent<HTMLElement>,
     layer: Layer,
@@ -123,7 +207,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     event.stopPropagation();
     setActiveTab('animation');
     setSelectedLayerId(layer.id);
-    setSelectedActionId(action.id);
+    selectAction(layer.id, action.id);
     setIsPlaying(false);
 
     const timeline = event.currentTarget.closest('[data-timeline-track="true"]') as HTMLElement | null;
@@ -168,15 +252,15 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
   };
 
   return (
-    <div className="hidden h-[224px] shrink-0 border-t border-slate-200 bg-white lg:flex">
-      <div className="flex w-[220px] shrink-0 flex-col justify-between border-r border-slate-200 px-4 py-3">
+    <div className="hidden h-[256px] shrink-0 border-t border-slate-200 bg-slate-50 lg:flex">
+      <div className="flex w-[204px] shrink-0 flex-col justify-between border-r border-slate-200 bg-white px-4 py-3">
         <div>
           <p className="font-display text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Timeline</p>
           <div className="mt-1 flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsPlaying(!isPlaying)}
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-950 text-white transition hover:bg-indigo-600"
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm transition hover:bg-indigo-600"
               aria-label={isPlaying ? 'Pause timeline' : 'Play timeline'}
             >
               {isPlaying ? <Pause size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
@@ -254,36 +338,75 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
           </div>
         </div>
 
-        <div className="grid h-[128px] grid-cols-[168px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50">
+        <div className="grid h-[160px] grid-cols-[164px_minmax(0,1fr)] overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
           <div className="border-r border-slate-200 bg-white/80">
-            {orderedLayers.map(layer => (
-              <button
-                key={layer.id}
-                type="button"
-                onClick={() => setSelectedLayerId(layer.id)}
-                className={`flex h-10 w-full items-center gap-2 px-3 text-left text-xs font-black transition ${
-                  selectedLayerId === layer.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <span className={`h-2 w-2 rounded-full ${layer.visible ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                <span className="min-w-0 flex-1 truncate">{layerLabel(layer, config.platform)}</span>
-                <span
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateLayer(layer.id, { visible: !layer.visible } as Partial<Layer>);
-                  }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
-                >
-                  {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                </span>
-              </button>
-            ))}
+            {orderedLayers.map(layer => {
+              const isBg = layer.id === 'layer-bg-auto';
+              const ri = reorderableTimelineIndices.find(item => item.id === layer.id);
+              const sourceIndex = ri !== undefined ? ri.visualIndex : -1;
+              const isDragging = tlDragRowId === layer.id;
+              const isDropTarget = tlDragRowId && tlDragRowId !== layer.id && tlDragOverIndex !== null && ri !== undefined && tlDragOverIndex === sourceIndex;
+
+              return (
+                <React.Fragment key={layer.id}>
+                  {isDropTarget && (
+                    <div className="relative mx-3 -mb-px h-0.5 bg-indigo-500 pointer-events-none rounded-full" />
+                  )}
+                  <div
+                    id={`tl-layer-row-${layer.id}`}
+                    className={`flex h-10 w-full items-center gap-1.5 pl-2 pr-2 text-left transition ${
+                      selectedLayerId === layer.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                    } ${isDragging ? 'opacity-60 scale-[1.04] shadow-lg bg-white' : ''}`}
+                  >
+                    {!isBg && (
+                      <div
+                        role="button"
+                        aria-label={`Drag to reorder ${layerLabel(layer, config.platform)}`}
+                        className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing select-none"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          tlRowOnPointerDown(layer.id, event, sourceIndex);
+                        }}
+                        title="Drag to reorder"
+                      >
+                        <GripVertical size={11} />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLayerId(layer.id)}
+                      className="min-w-0 flex-1 text-left flex items-center gap-2"
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${layer.visible ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                      <span className="truncate text-xs font-black">
+                        {layerLabel(layer, config.platform)}
+                        {isBg && <span className="ml-1 text-[9px] font-bold text-slate-400">(locked)</span>}
+                      </span>
+                    </button>
+                    <span
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateLayer(layer.id, { visible: !layer.visible } as Partial<Layer>);
+                      }}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
+                    >
+                      {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    </span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
           </div>
 
-          <div className="relative" data-timeline-track="true">
+          <div
+            className="relative cursor-pointer bg-slate-50"
+            data-timeline-track="true"
+            onPointerDown={beginPlayheadScrub}
+          >
+            <div className="pointer-events-none absolute inset-x-3 top-0 z-0 h-full rounded-xl border-x border-slate-200/70 bg-white/45" />
             <div className="pointer-events-none absolute inset-x-3 top-0 z-0 flex h-full justify-between">
               {markers.map(marker => (
                 <span key={marker} className="relative h-full w-px bg-slate-200">
@@ -308,7 +431,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                         key={action.id}
                         type="button"
                         onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'move')}
-                        className={`group/action absolute top-2 flex h-6 min-w-12 items-center overflow-hidden rounded-full bg-gradient-to-r px-1 text-[10px] font-black uppercase tracking-[0.04em] shadow-sm transition ${actionTone[action.kind]} ${
+                        className={`group/action absolute top-1.5 flex h-7 min-w-14 items-center overflow-hidden rounded-full bg-gradient-to-r px-1 text-[10px] font-black uppercase tracking-[0.04em] shadow-sm transition ${actionTone[action.kind]} ${
                           isSelected ? 'ring-2 ring-slate-950 ring-offset-2 ring-offset-slate-50' : 'hover:shadow-md'
                         } ${layer.visible ? '' : 'opacity-40'}`}
                         style={{
@@ -319,15 +442,17 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                         aria-label={`Move ${action.name} action block`}
                       >
                         <span
-                          className="flex h-full w-3 shrink-0 cursor-ew-resize items-center justify-center rounded-l-full opacity-70 hover:bg-white/20"
+                          className="flex h-full w-4 shrink-0 cursor-ew-resize items-center justify-center rounded-l-full opacity-80 hover:bg-white/25"
                           onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'resize-start')}
                           aria-hidden="true"
                         >
                           <GripVertical size={10} />
                         </span>
-                        <span className="min-w-0 flex-1 truncate px-1">{action.kind} · {action.style}</span>
+                        <span className="min-w-0 flex-1 truncate px-1">
+                          {action.name || `${action.kind} · ${action.style}`}
+                        </span>
                         <span
-                          className="flex h-full w-3 shrink-0 cursor-ew-resize items-center justify-center rounded-r-full opacity-70 hover:bg-white/20"
+                          className="flex h-full w-4 shrink-0 cursor-ew-resize items-center justify-center rounded-r-full opacity-80 hover:bg-white/25"
                           onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'resize-end')}
                           aria-hidden="true"
                         >
@@ -341,25 +466,22 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
             })}
 
             <div
-              className="pointer-events-none absolute inset-y-0 z-20 w-px bg-slate-950"
+              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-indigo-600"
               style={{ left: `calc(12px + ${progress}% - ${progress * 0.24}px)` }}
             >
-              <span className="absolute -left-3 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-white shadow-md">
+              <button
+                type="button"
+                onPointerDown={beginPlayheadScrub}
+                className="pointer-events-auto absolute -left-3 top-2 flex h-6 w-6 cursor-ew-resize items-center justify-center rounded-full bg-indigo-600 text-white shadow-md ring-4 ring-white/90 transition hover:scale-110 focus:outline-none focus:ring-indigo-300"
+                aria-label="Drag timeline playhead"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress)}
+                role="slider"
+              >
                 <Circle size={8} fill="currentColor" />
-              </span>
+              </button>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={progress}
-              onChange={(event) => {
-                setIsPlaying(false);
-                setProgress(Number(event.target.value));
-              }}
-              className="absolute inset-0 z-0 h-full w-full cursor-pointer opacity-0"
-              aria-label="Timeline playhead"
-            />
           </div>
         </div>
 

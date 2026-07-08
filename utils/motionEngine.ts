@@ -6,6 +6,7 @@ import {
   EasingPreset,
   Layer,
   LayerActionBlock,
+  LayerActionPropertyValue,
 } from '../types';
 
 export interface MotionState {
@@ -30,6 +31,8 @@ export interface MotionContext {
     | 'customBezierIn'
     | 'customBezierOut'
   >;
+  /** Layer IDs whose keyframe motion should be skipped (e.g. during live resize/move). */
+  pausedLayerIds?: ReadonlySet<string>;
 }
 
 export const speedToFrames: Record<AnimationSpeed, number> = {
@@ -168,39 +171,116 @@ const effectState = (style: AnimationStyle, visibility: number, frame: number, l
   return { opacity: clamp(visibility), transform, filter, blurPx };
 };
 
+const interpolate = (from: number, to: number, progress: number) => from + (to - from) * progress;
+
+const propertyEffectState = (properties: LayerActionPropertyValue[], progress: number): MotionState => {
+  const values = new Map(properties.map(property => [
+    property.property,
+    interpolate(property.from, property.to, progress),
+  ]));
+  const opacity = values.get('opacity') ?? 1;
+  const x = values.get('x') ?? 0;
+  const y = values.get('y') ?? 0;
+  const scale = values.get('scale') ?? 1;
+  const rotate = values.get('rotate') ?? 0;
+  const blur = values.get('blur') ?? 0;
+  const transforms: string[] = [];
+
+  if (x !== 0 || y !== 0) transforms.push(`translate3d(${x}px, ${y}px, 0)`);
+  if (scale !== 1) transforms.push(`scale(${scale})`);
+  if (rotate !== 0) transforms.push(`rotate(${rotate}deg)`);
+
+  return {
+    opacity: clamp(opacity, 0, 1),
+    transform: transforms.length ? transforms.join(' ') : 'none',
+    filter: blur > 0 ? `blur(${blur}px)` : '',
+    blurPx: blur,
+  };
+};
+
+const mergeMotionStates = (states: MotionState[]): MotionState => {
+  if (states.length === 0) return { opacity: 1, transform: 'none', filter: '', blurPx: 0 };
+
+  const transforms = states
+    .map(state => state.transform)
+    .filter(transform => transform && transform !== 'none');
+  const filters = states
+    .map(state => state.filter)
+    .filter(Boolean);
+
+  return {
+    opacity: states.reduce((opacity, state) => opacity * state.opacity, 1),
+    transform: transforms.length ? transforms.join(' ') : 'none',
+    filter: filters.join(' '),
+    blurPx: states.reduce((blur, state) => blur + state.blurPx, 0),
+  };
+};
+
+const actionHasMotion = (action: LayerActionBlock) => (
+  (action.properties && action.properties.length > 0) || (action.style && action.style !== 'none')
+);
+
+const actionMotionState = (
+  action: LayerActionBlock,
+  rawProgress: number,
+  frame: number,
+  layerId: string,
+) => {
+  const eased = easeProgress(rawProgress, action.easingPreset, action.customBezier);
+  if (action.properties && action.properties.length > 0) {
+    return propertyEffectState(action.properties, eased);
+  }
+
+  const visibility = action.kind === 'out' ? 1 - eased : eased;
+  return effectState(action.style, visibility, frame, layerId, action.intensity ?? 1);
+};
+
 export const getLayerMotion = (layer: Layer | undefined, context: MotionContext): MotionState => {
   if (!layer?.visible) return { opacity: 0, transform: 'none', filter: '', blurPx: 0 };
 
+  // If the layer is being directly manipulated (resize, move-drag), skip keyframe motion
+  if (context.pausedLayerIds?.has(layer.id)) {
+    return { opacity: 1, transform: 'none', filter: '', blurPx: 0 };
+  }
+
   const actions = getLayerActionBlocks(layer, context);
-  const hasMotionAction = actions.some(action => action.style && action.style !== 'none');
+  const hasMotionAction = actions.some(actionHasMotion);
   if (!hasMotionAction) {
     return { opacity: 1, transform: 'none', filter: '', blurPx: 0 };
   }
 
-  const activeAction = actions.find(action => {
+  const activeActions = actions.filter(action => {
     const endFrame = action.startFrame + Math.max(1, action.durationFrames);
     return context.frame >= action.startFrame && context.frame <= endFrame;
   });
 
-  if (activeAction) {
-    const rawProgress = (context.frame - activeAction.startFrame) / Math.max(1, activeAction.durationFrames);
-    const eased = easeProgress(rawProgress, activeAction.easingPreset, activeAction.customBezier);
-    const visibility = activeAction.kind === 'out' ? 1 - eased : eased;
-    const motion = effectState(activeAction.style, visibility, context.frame, layer.id, activeAction.intensity ?? 1);
-    if (layer.motionBlur && activeAction.style !== 'none') {
-      const extraBlur = Math.abs(0.5 - clamp(rawProgress)) * 5;
-      return {
-        ...motion,
-        blurPx: motion.blurPx + extraBlur,
-        filter: `${motion.filter ? `${motion.filter} ` : ''}blur(${extraBlur}px)`,
-      };
-    }
-    return motion;
+  if (activeActions.length > 0) {
+    const motionStates = activeActions.map(action => {
+      const rawProgress = (context.frame - action.startFrame) / Math.max(1, action.durationFrames);
+      const motion = actionMotionState(action, rawProgress, context.frame, layer.id);
+      if (layer.motionBlur && actionHasMotion(action)) {
+        const extraBlur = Math.abs(0.5 - clamp(rawProgress)) * 5;
+        return {
+          ...motion,
+          blurPx: motion.blurPx + extraBlur,
+          filter: `${motion.filter ? `${motion.filter} ` : ''}blur(${extraBlur}px)`,
+        };
+      }
+      return motion;
+    });
+    return mergeMotionStates(motionStates);
   }
 
-  const firstInAction = actions.find(action => action.kind === 'in');
-  if (firstInAction && firstInAction.style !== 'none' && context.frame < firstInAction.startFrame) {
-    return { opacity: 0, transform: 'scale(0.96)', filter: '', blurPx: 0 };
+  const firstInAction = actions.find(action => action.kind === 'in' && actionHasMotion(action));
+  if (firstInAction && context.frame < firstInAction.startFrame) {
+    return actionMotionState(firstInAction, 0, context.frame, layer.id);
+  }
+
+  const completedOutActions = actions
+    .filter(action => action.kind === 'out' && actionHasMotion(action) && context.frame > action.startFrame + Math.max(1, action.durationFrames))
+    .sort((a, b) => (b.startFrame + b.durationFrames) - (a.startFrame + a.durationFrames));
+  if (completedOutActions[0]) {
+    return actionMotionState(completedOutActions[0], 1, context.frame, layer.id);
   }
 
   return { opacity: 1, transform: 'none', filter: '', blurPx: 0 };

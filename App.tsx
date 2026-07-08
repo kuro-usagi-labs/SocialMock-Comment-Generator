@@ -1,17 +1,40 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { toBlob, toPng } from 'html-to-image';
-import { Copy, Download, Loader2, MessageCircle, Minus, PackageCheck, Plus, RotateCcw } from 'lucide-react';
+import {
+  Copy,
+  Download,
+  Image as ImageIcon,
+  Layers,
+  Loader2,
+  MessageCircle,
+  Minus,
+  MousePointer2,
+  PackageCheck,
+  Palette,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Square,
+  Type as TextIcon,
+  Undo2,
+  Video,
+} from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaTiktok, FaXTwitter, FaYoutube } from 'react-icons/fa6';
 import { Toaster, toast } from 'sonner';
-import { INITIAL_CONFIG, CommentConfig, BulkMessage, Layer, LayerActionBlock, Platform, VideoExportFormat } from './types';
-import { ControlPanel } from './components/ControlPanel';
+import { INITIAL_CONFIG, CommentConfig, BulkMessage, EditorSelection, Layer, LayerActionBlock, MotionDocument, Platform, VideoExportFormat } from './types';
 import { PreviewCanvas } from './components/PreviewCanvas';
+import { HomeDashboard } from './components/HomeDashboard';
 import { RightInspector } from './components/RightInspector';
 import { TimelineDock } from './components/TimelineDock';
 import { CanvasLayerRenderer } from './components/canvas/CanvasLayerRenderer';
-import { Video, Image as ImageIcon, Type as TextIcon } from 'lucide-react';
+import { ResizeHandle } from './components/canvas/CanvasLayerFrame';
 import { progressToFrame } from './utils/motionEngine';
 import { usePreviewRuntime } from './utils/previewRuntime';
+import { createMotionDocument, getActiveSceneConfig, updateActiveSceneConfig } from './utils/motionDocument';
+import { syncBackgroundLayerFromConfig } from './utils/backgroundLayer';
+import { MotionTemplate, createDocumentFromTemplate } from './utils/templateLibrary';
+import { SavedMotionProject, deleteMotionProject, duplicateMotionProject, loadMotionProjects, saveMotionProject } from './utils/projectStore';
+import { createActionSelection, createCanvasSelection, createLayerSelection, getPrimaryActionId, getPrimaryLayerId } from './utils/selection';
 
 const platformOptions: Array<{
   value: Platform;
@@ -29,6 +52,58 @@ const platformOptions: Array<{
 ];
 
 type AddLayerKind = 'text' | 'shape' | 'image';
+
+interface DocumentHistoryEntry {
+  document: MotionDocument;
+  selection: EditorSelection;
+  selectedSceneIndex: number;
+  label: string;
+}
+
+interface DocumentCommandHistory {
+  undoStack: DocumentHistoryEntry[];
+  redoStack: DocumentHistoryEntry[];
+}
+
+const MAX_COMMAND_HISTORY = 80;
+const COMMAND_MERGE_WINDOW_MS = 450;
+
+const cloneMotionDocument = (document: MotionDocument): MotionDocument => {
+  if (typeof structuredClone === 'function') return structuredClone(document);
+  return JSON.parse(JSON.stringify(document)) as MotionDocument;
+};
+
+const cloneSelection = (selection: EditorSelection): EditorSelection => ({ ...selection, ids: [...selection.ids] });
+
+const isSameMotionDocument = (a: MotionDocument, b: MotionDocument) => JSON.stringify(a) === JSON.stringify(b);
+
+interface StudioRailButtonProps {
+  active?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}
+
+const StudioRailButton: React.FC<StudioRailButtonProps> = ({ active = false, icon, label, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`group flex h-12 w-12 items-center justify-center rounded-xl transition ${
+      active
+        ? 'bg-white text-slate-950 shadow-lg shadow-slate-950/15'
+        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+    }`}
+    title={label}
+    aria-label={label}
+  >
+    {icon}
+  </button>
+);
+
+const clampReorderTarget = (currentIndex: number, targetIndex: number, length: number) => {
+  const adjusted = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
+  return Math.min(length - 1, Math.max(0, adjusted));
+};
 
 const createDefaultLayerActions = (layerId: string): LayerActionBlock[] => [
   {
@@ -57,7 +132,13 @@ const App: React.FC = () => {
   const initialTab = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'animation'
     ? 'animation'
     : 'canvas';
-  const [config, setConfig] = useState<CommentConfig>(INITIAL_CONFIG);
+  const [savedProjects, setSavedProjects] = useState<SavedMotionProject[]>(() => loadMotionProjects());
+  const [motionDocument, setMotionDocument] = useState<MotionDocument>(() => (
+    savedProjects[0]?.document ?? createMotionDocument(syncBackgroundLayerFromConfig(INITIAL_CONFIG))
+  ));
+  const config = getActiveSceneConfig(motionDocument);
+  const [commandHistory, setCommandHistory] = useState<DocumentCommandHistory>({ undoStack: [], redoStack: [] });
+  const [workspaceView, setWorkspaceView] = useState<'home' | 'editor'>('home');
   const [zoom, setZoom] = useState(1.15);
   const previewRef = useRef<HTMLDivElement>(null);
   const previewLayerElementsRef = useRef(new Map<string, HTMLElement>());
@@ -70,27 +151,272 @@ const App: React.FC = () => {
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [videoExportFormat, setVideoExportFormat] = useState<VideoExportFormat>('mp4');
   const [renderProgress, setRenderProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
-  const [selectedLayerId, setSelectedLayerId] = useState('layer-card-auto');
+  const [selection, setSelection] = useState<EditorSelection>(() => createLayerSelection('layer-card-auto'));
   const [timelineProgress, setTimelineProgress] = useState(42);
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
   const [timelineDirection, setTimelineDirection] = useState(1);
   const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
+  const [resizingLayerId, setResizingLayerId] = useState<string | null>(null);
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
+  const motionDocumentRef = useRef(motionDocument);
+  const selectionRef = useRef(selection);
+  const selectedSceneIndexRef = useRef(selectedSceneIndex);
+  const lastCommandRecordAtRef = useRef(0);
   const hasBulkMessages = config.bulkMessages.length > 0;
   const safeSelectedSceneIndex = hasBulkMessages ? Math.min(selectedSceneIndex, config.bulkMessages.length) : 0;
   const activeBulkMessage = safeSelectedSceneIndex > 0 ? config.bulkMessages[safeSelectedSceneIndex - 1] : undefined;
   const currentPlatform = platformOptions.find(platform => platform.value === config.platform) || platformOptions[0];
+  const selectedLayerId = selection.type === 'canvas' ? 'layer-bg-auto' : getPrimaryLayerId(selection);
+  const selectedActionId = getPrimaryActionId(selection);
+  const canUndo = commandHistory.undoStack.length > 0;
+  const canRedo = commandHistory.redoStack.length > 0;
+  const nextUndoLabel = commandHistory.undoStack[commandHistory.undoStack.length - 1]?.label;
+  const nextRedoLabel = commandHistory.redoStack[commandHistory.redoStack.length - 1]?.label;
+
+  useEffect(() => {
+    motionDocumentRef.current = motionDocument;
+  }, [motionDocument]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
+    selectedSceneIndexRef.current = selectedSceneIndex;
+  }, [selectedSceneIndex]);
   
   const waitForPreviewPaint = () => new Promise<void>(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 
+  const resetCommandHistory = useCallback(() => {
+    lastCommandRecordAtRef.current = 0;
+    setCommandHistory({ undoStack: [], redoStack: [] });
+  }, []);
+
+  const pushUndoSnapshot = useCallback((
+    beforeDocument: MotionDocument,
+    beforeSelection: EditorSelection,
+    beforeSelectedSceneIndex: number,
+    afterDocument: MotionDocument,
+    label: string,
+    force = false,
+  ) => {
+    if (isSameMotionDocument(beforeDocument, afterDocument)) return;
+    const now = Date.now();
+    const shouldMerge = !force && now - lastCommandRecordAtRef.current < COMMAND_MERGE_WINDOW_MS;
+    lastCommandRecordAtRef.current = now;
+
+    if (shouldMerge) {
+      setCommandHistory(history => ({ ...history, redoStack: [] }));
+      return;
+    }
+
+    const entry: DocumentHistoryEntry = {
+      document: cloneMotionDocument(beforeDocument),
+      selection: cloneSelection(beforeSelection),
+      selectedSceneIndex: beforeSelectedSceneIndex,
+      label,
+    };
+
+    setCommandHistory(history => ({
+      undoStack: [...history.undoStack, entry].slice(-MAX_COMMAND_HISTORY),
+      redoStack: [],
+    }));
+  }, []);
+
+  const replaceMotionDocument = useCallback((document: MotionDocument, clearHistory = true) => {
+    motionDocumentRef.current = document;
+    setMotionDocument(document);
+    if (clearHistory) resetCommandHistory();
+  }, [resetCommandHistory]);
+
+  const commitMotionDocument = useCallback((
+    updater: MotionDocument | ((document: MotionDocument) => MotionDocument),
+    options: { label?: string; record?: boolean; forceHistory?: boolean } = {},
+  ) => {
+    const { label = 'Edit document', record = true, forceHistory = false } = options;
+    setMotionDocument(previousDocument => {
+      const beforeDocument = previousDocument;
+      const beforeSelection = selectionRef.current;
+      const beforeSelectedSceneIndex = selectedSceneIndexRef.current;
+      const nextDocument = typeof updater === 'function'
+        ? updater(previousDocument)
+        : updater;
+
+      motionDocumentRef.current = nextDocument;
+      if (record) {
+        pushUndoSnapshot(
+          beforeDocument,
+          beforeSelection,
+          beforeSelectedSceneIndex,
+          nextDocument,
+          label,
+          forceHistory,
+        );
+      }
+      return nextDocument;
+    });
+  }, [pushUndoSnapshot]);
+
+  const undo = useCallback(() => {
+    const entry = commandHistory.undoStack[commandHistory.undoStack.length - 1];
+    if (!entry) return;
+
+    const redoEntry: DocumentHistoryEntry = {
+      document: cloneMotionDocument(motionDocumentRef.current),
+      selection: cloneSelection(selectionRef.current),
+      selectedSceneIndex: selectedSceneIndexRef.current,
+      label: entry.label,
+    };
+
+    const nextDocument = cloneMotionDocument(entry.document);
+    motionDocumentRef.current = nextDocument;
+    setMotionDocument(nextDocument);
+    setSelection(cloneSelection(entry.selection));
+    setSelectedSceneIndex(entry.selectedSceneIndex);
+    setIsTimelinePlaying(false);
+    lastCommandRecordAtRef.current = 0;
+
+    setCommandHistory({
+      undoStack: commandHistory.undoStack.slice(0, -1),
+      redoStack: [...commandHistory.redoStack, redoEntry],
+    });
+  }, [commandHistory]);
+
+  const redo = useCallback(() => {
+    const entry = commandHistory.redoStack[commandHistory.redoStack.length - 1];
+    if (!entry) return;
+
+    const undoEntry: DocumentHistoryEntry = {
+      document: cloneMotionDocument(motionDocumentRef.current),
+      selection: cloneSelection(selectionRef.current),
+      selectedSceneIndex: selectedSceneIndexRef.current,
+      label: entry.label,
+    };
+
+    const nextDocument = cloneMotionDocument(entry.document);
+    motionDocumentRef.current = nextDocument;
+    setMotionDocument(nextDocument);
+    setSelection(cloneSelection(entry.selection));
+    setSelectedSceneIndex(entry.selectedSceneIndex);
+    setIsTimelinePlaying(false);
+    lastCommandRecordAtRef.current = 0;
+
+    setCommandHistory({
+      undoStack: [...commandHistory.undoStack, undoEntry].slice(-MAX_COMMAND_HISTORY),
+      redoStack: commandHistory.redoStack.slice(0, -1),
+    });
+  }, [commandHistory]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isCommandKey = event.ctrlKey || event.metaKey;
+      if (!isCommandKey) return;
+      const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+      if (isTyping && key !== 'z' && key !== 'y') return;
+
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        redo();
+        return;
+      }
+
+      if (key === 'z') {
+        event.preventDefault();
+        undo();
+        return;
+      }
+
+      if (key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [redo, undo]);
+
+  const selectLayer = useCallback((layerId: string) => {
+    setSelection(createLayerSelection(layerId));
+  }, []);
+
+  const selectCanvas = useCallback(() => {
+    setSelection(createCanvasSelection());
+  }, []);
+
+  const selectAction = useCallback((layerId: string, actionId: string) => {
+    setSelection(createActionSelection(layerId, actionId));
+  }, []);
+
+  const resetEditorRuntime = useCallback(() => {
+    setActiveTab('canvas');
+    selectLayer('layer-card-auto');
+    setTimelineProgress(42);
+    setSelectedSceneIndex(0);
+    setIsTimelinePlaying(false);
+    setTimelineDirection(1);
+  }, [selectLayer]);
+
+  const handleCreateBlankProject = useCallback(() => {
+    const document = createMotionDocument(syncBackgroundLayerFromConfig(INITIAL_CONFIG), {
+      title: 'Untitled SocialMock',
+    });
+    saveMotionProject(document);
+    replaceMotionDocument(document);
+    setSavedProjects(loadMotionProjects());
+    resetEditorRuntime();
+    setWorkspaceView('editor');
+  }, [replaceMotionDocument, resetEditorRuntime]);
+
+  const handleUseTemplate = useCallback((template: MotionTemplate) => {
+    const document = createDocumentFromTemplate(template);
+    saveMotionProject(document);
+    replaceMotionDocument(document);
+    setSavedProjects(loadMotionProjects());
+    resetEditorRuntime();
+    setWorkspaceView('editor');
+    toast.success(`Template loaded: ${template.title}`);
+  }, [replaceMotionDocument, resetEditorRuntime]);
+
+  const handleOpenProject = useCallback((project: SavedMotionProject) => {
+    replaceMotionDocument(project.document);
+    resetEditorRuntime();
+    setWorkspaceView('editor');
+  }, [replaceMotionDocument, resetEditorRuntime]);
+
+  const handleDuplicateProject = useCallback((project: SavedMotionProject) => {
+    const copy = duplicateMotionProject(project.id);
+    setSavedProjects(loadMotionProjects());
+    if (copy) toast.success(`Duplicated ${project.title}`);
+  }, []);
+
+  const handleDeleteProject = useCallback((project: SavedMotionProject) => {
+    if (!window.confirm(`Delete "${project.title}"?`)) return;
+    deleteMotionProject(project.id);
+    const nextProjects = loadMotionProjects();
+    setSavedProjects(nextProjects);
+    if (project.id === motionDocument.id && nextProjects[0]) {
+      replaceMotionDocument(nextProjects[0].document);
+    } else if (project.id === motionDocument.id) {
+      replaceMotionDocument(createMotionDocument(syncBackgroundLayerFromConfig(INITIAL_CONFIG), {
+        title: 'Untitled SocialMock',
+      }));
+    }
+  }, [motionDocument.id, replaceMotionDocument]);
+
   const handleReset = useCallback(() => {
     if (window.confirm('Reset all changes?')) {
-      setConfig(INITIAL_CONFIG);
+      commitMotionDocument(createMotionDocument(syncBackgroundLayerFromConfig(INITIAL_CONFIG), {
+        title: motionDocument.title,
+      }), { label: 'Reset document', forceHistory: true });
+      resetEditorRuntime();
     }
-  }, []);
+  }, [commitMotionDocument, motionDocument.title, resetEditorRuntime]);
 
   const handleExport = useCallback(async () => {
     if (previewRef.current === null) return;
@@ -167,9 +493,25 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const setConfig = useCallback((
+    updater: CommentConfig | ((config: CommentConfig) => CommentConfig),
+    options: { label?: string; record?: boolean; forceHistory?: boolean } = {},
+  ) => {
+    commitMotionDocument(prev => updateActiveSceneConfig(prev, currentConfig => {
+      return typeof updater === 'function'
+        ? updater(currentConfig)
+        : updater;
+    }), options);
+  }, [commitMotionDocument]);
+
   const update = useCallback((key: keyof CommentConfig, value: any) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
-  }, []);
+    setConfig(prev => {
+      const nextConfig = { ...prev, [key]: value };
+      return key === 'backgroundType' || key === 'backgroundColor'
+        ? syncBackgroundLayerFromConfig(nextConfig)
+        : nextConfig;
+    }, { label: `Update ${String(key)}` });
+  }, [setConfig]);
 
   const registerPreviewLayerTarget = useCallback((layerId: string, element: HTMLElement | null) => {
     if (element) {
@@ -179,7 +521,7 @@ const App: React.FC = () => {
     previewLayerElementsRef.current.delete(layerId);
   }, []);
 
-  const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
+  const updateLayer = useCallback((id: string, patch: Partial<Layer>, options: { label?: string; record?: boolean; forceHistory?: boolean } = {}) => {
     setConfig(prev => ({
       ...prev,
       canvas: {
@@ -188,8 +530,8 @@ const App: React.FC = () => {
           layer.id === id ? ({ ...layer, ...patch } as Layer) : layer
         ),
       },
-    }));
-  }, []);
+    }), { label: options.label || 'Update layer', record: options.record, forceHistory: options.forceHistory });
+  }, [setConfig]);
 
   const resetLayerTransform = useCallback((id: string) => {
     updateLayer(id, {
@@ -206,8 +548,11 @@ const App: React.FC = () => {
 
     event.preventDefault();
     event.stopPropagation();
-    setSelectedLayerId(id);
+    selectLayer(id);
     setDraggingLayerId(id);
+    const beforeDocument = cloneMotionDocument(motionDocumentRef.current);
+    const beforeSelection = cloneSelection(selectionRef.current);
+    const beforeSelectedSceneIndex = selectedSceneIndexRef.current;
 
     const startX = event.clientX;
     const startY = event.clientY;
@@ -221,11 +566,105 @@ const App: React.FC = () => {
     const handleMove = (moveEvent: PointerEvent) => {
       const nextX = Math.round(originX + (moveEvent.clientX - startX) / activeZoom);
       const nextY = Math.round(originY + (moveEvent.clientY - startY) / activeZoom);
-      updateLayer(id, { x: nextX, y: nextY } as Partial<Layer>);
+      updateLayer(id, { x: nextX, y: nextY } as Partial<Layer>, { record: false });
     };
 
     const handleUp = () => {
+      pushUndoSnapshot(
+        beforeDocument,
+        beforeSelection,
+        beforeSelectedSceneIndex,
+        motionDocumentRef.current,
+        'Move layer',
+        true,
+      );
       setDraggingLayerId(null);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp, { once: true });
+  };
+
+  const beginLayerResize = (id: string, handle: ResizeHandle, event: React.PointerEvent<Element>) => {
+    const layer = config.canvas.layers.find(item => item.id === id);
+    if (!layer || layer.id === 'layer-bg-auto' || layer.id === 'layer-card-auto') return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    selectLayer(id);
+    setResizingLayerId(id);
+    const beforeDocument = cloneMotionDocument(motionDocumentRef.current);
+    const beforeSelection = cloneSelection(selectionRef.current);
+    const beforeSelectedSceneIndex = selectedSceneIndexRef.current;
+
+    const startPointerX = event.clientX;
+    const startPointerY = event.clientY;
+    const startX = layer.x;
+    const startY = layer.y;
+    const startW = layer.width;
+    const startH = layer.height;
+    const aspectRatio = startW / (startH || 1);
+    const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
+    const activeZoom = viewportWidth < 768
+      ? Math.min(zoom, Math.max(0.25, (viewportWidth - 88) / config.width))
+      : zoom;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const dx = (moveEvent.clientX - startPointerX) / activeZoom;
+      const dy = (moveEvent.clientY - startPointerY) / activeZoom;
+      let newX = startX, newY = startY, newW = startW, newH = startH;
+
+      switch (handle) {
+        case 'nw': newX = startX + dx; newY = startY + dy; newW = startW - dx; newH = startH - dy; break;
+        case 'ne': newY = startY + dy; newW = startW + dx; newH = startH - dy; break;
+        case 'sw': newX = startX + dx; newW = startW - dx; newH = startH + dy; break;
+        case 'se': newW = startW + dx; newH = startH + dy; break;
+        case 'n': newY = startY + dy; newH = startH - dy; break;
+        case 's': newH = startH + dy; break;
+        case 'w': newX = startX + dx; newW = startW - dx; break;
+        case 'e': newW = startW + dx; break;
+      }
+
+      // Aspect lock on Shift for corner handles
+      if (moveEvent.shiftKey && ['nw', 'ne', 'sw', 'se'].includes(handle)) {
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        if (absDx > absDy) {
+          const sign = dx > 0 ? 1 : -1;
+          if (handle === 'se' || handle === 'sw') { newH = startH + sign * (absDx / aspectRatio); }
+          else { newH = startH - sign * (absDx / aspectRatio); }
+        } else {
+          const sign = dy > 0 ? 1 : -1;
+          if (handle === 'se' || handle === 'ne') { newW = startW + sign * (absDy * aspectRatio); }
+          else { newW = startW - sign * (absDy * aspectRatio); }
+        }
+      }
+
+      // Clamp min size, revert position drift
+      if (newW < 24) { newW = 24; if (handle === 'nw' || handle === 'sw' || handle === 'w') newX = startX + startW - 24; }
+      if (newH < 24) { newH = 24; if (handle === 'nw' || handle === 'ne' || handle === 'n') newY = startY + startH - 24; }
+      if (newX < 0) { newW = startW + startX; newX = 0; }
+      if (newY < 0) { newH = startH + startY; newY = 0; }
+
+      updateLayer(
+        id,
+        { x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) } as Partial<Layer>,
+        { record: false },
+      );
+    };
+
+    const handleUp = () => {
+      pushUndoSnapshot(
+        beforeDocument,
+        beforeSelection,
+        beforeSelectedSceneIndex,
+        motionDocumentRef.current,
+        'Resize layer',
+        true,
+      );
+      setResizingLayerId(null);
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
@@ -254,6 +693,29 @@ const App: React.FC = () => {
         canvas: {
           ...prev.canvas,
           layers: nextLayers.map((layer, index) => ({ ...layer, zIndex: index * 10 } as Layer)),
+        },
+      };
+    });
+  }, []);
+
+  const reorderLayer = useCallback((id: string, targetIndex: number) => {
+    setConfig(prev => {
+      const ordered = [...prev.canvas.layers].sort((a, b) => a.zIndex - b.zIndex);
+      const bgLayer = ordered.find(layer => layer.id === 'layer-bg-auto');
+      // Exclude background from reorderable set; background always index 0 at the back
+      const reorderable = ordered.filter(layer => layer.id !== 'layer-bg-auto');
+      const currentIndex = reorderable.findIndex(layer => layer.id === id);
+      if (currentIndex === -1) return prev;
+      const clampedTarget = clampReorderTarget(currentIndex, targetIndex, reorderable.length);
+      if (clampedTarget === currentIndex) return prev;
+      const [moved] = reorderable.splice(currentIndex, 1);
+      reorderable.splice(clampedTarget, 0, moved);
+      const merged = bgLayer ? [bgLayer, ...reorderable] : reorderable;
+      return {
+        ...prev,
+        canvas: {
+          ...prev.canvas,
+          layers: merged.map((layer, index) => ({ ...layer, zIndex: index * 10 } as Layer)),
         },
       };
     });
@@ -341,7 +803,7 @@ const App: React.FC = () => {
       };
     });
 
-    setSelectedLayerId(id);
+    selectLayer(id);
     setActiveTab('canvas');
   }, []);
 
@@ -372,7 +834,7 @@ const App: React.FC = () => {
         },
       };
     });
-    setSelectedLayerId(nextId);
+    selectLayer(nextId);
   }, []);
 
   const deleteLayer = useCallback((id: string) => {
@@ -388,7 +850,7 @@ const App: React.FC = () => {
         layers: prev.canvas.layers.filter(layer => layer.id !== id),
       },
     }));
-    setSelectedLayerId('layer-card-auto');
+    selectLayer('layer-card-auto');
   }, []);
 
   const updateBulkMessage = useCallback((index: number, patch: Partial<BulkMessage>) => {
@@ -426,6 +888,24 @@ const App: React.FC = () => {
     setSelectedSceneIndex(Math.max(0, safeSelectedSceneIndex - 1));
     toast.success('Artboard deleted');
   }, [safeSelectedSceneIndex]);
+
+  const layerVisible = (id: string) => config.canvas.layers.find(layer => layer.id === id)?.visible !== false;
+  const isBackgroundVisible = layerVisible('layer-bg-auto');
+
+  const applyBulkMessageToConfig = (message?: BulkMessage): CommentConfig => {
+    if (!message) return config;
+    return {
+      ...config,
+      content: message.content,
+      displayName: message.displayName,
+      username: message.username,
+      avatarInitials: message.avatarInitials,
+      avatarColor: message.avatarColor,
+      avatarUrl: message.avatarUrl,
+    };
+  };
+
+  const activeConfig = useMemo(() => applyBulkMessageToConfig(activeBulkMessage), [config, activeBulkMessage]);
 
   const handleBulkExport = useCallback(async () => {
     if (config.bulkMessages.length === 0) return;
@@ -474,6 +954,11 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    saveMotionProject(motionDocument);
+    setSavedProjects(loadMotionProjects());
+  }, [motionDocument]);
+
+  useEffect(() => {
     setSelectedSceneIndex(index => Math.min(index, config.bulkMessages.length));
   }, [config.bulkMessages.length]);
 
@@ -489,7 +974,7 @@ const App: React.FC = () => {
         const durationInFrames = Math.max(60, Math.round((config.animationDuration || 2) * 60));
         
         const result = await window.electronAPI.renderVideo({
-          config,
+          config: activeConfig,
           format,
           fps: 60,
           durationInFrames,
@@ -516,26 +1001,10 @@ const App: React.FC = () => {
       setIsExportingVideo(false);
       setRenderProgress({ progress: 0, stage: '' });
     }
-  }, [config]);
+  }, [config, activeConfig]);
 
-  const layerVisible = (id: string) => config.canvas.layers.find(layer => layer.id === id)?.visible !== false;
-  const isBackgroundVisible = layerVisible('layer-bg-auto');
-
-  const applyBulkMessageToConfig = (message?: BulkMessage): CommentConfig => {
-    if (!message) return config;
-
-    return {
-      ...config,
-      content: message.content,
-      displayName: message.displayName,
-      username: message.username,
-      avatarInitials: message.avatarInitials,
-      avatarColor: message.avatarColor,
-      avatarUrl: message.avatarUrl,
-    };
-  };
-
-  const activeConfig = applyBulkMessageToConfig(activeBulkMessage);
+  const showSelectionChrome = !isCapturingPreview;
+  const previewFrame = progressToFrame(timelineProgress, config.animationDuration || 2, 60);
   const previewLayerTargets = useMemo(() => config.canvas.layers
     .filter(layer => layer.type !== 'background')
     .map(layer => ({
@@ -543,17 +1012,20 @@ const App: React.FC = () => {
       getElement: () => previewLayerElementsRef.current.get(layer.id) ?? null,
       transformMode: layer.id === 'layer-overlay-auto' ? 'motion-only' as const : 'composed' as const,
     })), [config.canvas.layers]);
-  const showSelectionChrome = !isCapturingPreview;
-  const previewFrame = progressToFrame(timelineProgress, config.animationDuration || 2, 60);
+  const pausedIds = useMemo<ReadonlySet<string>>(() => {
+    const ids = new Set<string>();
+    if (draggingLayerId) ids.add(draggingLayerId);
+    if (resizingLayerId) ids.add(resizingLayerId);
+    return ids;
+  }, [draggingLayerId, resizingLayerId]);
   const motionContext = {
     frame: previewFrame,
     fps: 60,
     durationInFrames: Math.max(60, Math.round((config.animationDuration || 2) * 60)),
     config,
+    pausedLayerIds: pausedIds,
   };
-  const previewConfig: CommentConfig = isBackgroundVisible
-    ? activeConfig
-    : { ...activeConfig, backgroundType: 'transparent' };
+  const previewConfig: CommentConfig = activeConfig;
 
   const {
     setPreviewProgress,
@@ -566,6 +1038,7 @@ const App: React.FC = () => {
     progress: timelineProgress,
     isPlaying: isTimelinePlaying,
     direction: timelineDirection,
+    pausedLayerIds: pausedIds,
     setProgress: setTimelineProgress,
     setIsPlaying: setIsTimelinePlaying,
     setDirection: setTimelineDirection,
@@ -576,27 +1049,103 @@ const App: React.FC = () => {
     updateBulkMessage(safeSelectedSceneIndex - 1, patch);
   }, [safeSelectedSceneIndex, updateBulkMessage]);
 
+  if (workspaceView === 'home') {
+    return (
+      <>
+        <Toaster position="bottom-center" toastOptions={{ className: 'font-sans' }} />
+        <HomeDashboard
+          currentDocument={motionDocument}
+          projects={savedProjects}
+          onCreateBlank={handleCreateBlankProject}
+          onOpenDraft={() => setWorkspaceView('editor')}
+          onOpenProject={handleOpenProject}
+          onDuplicateProject={handleDuplicateProject}
+          onDeleteProject={handleDeleteProject}
+          onUseTemplate={handleUseTemplate}
+        />
+      </>
+    );
+  }
+
   return (
-    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-[#e8edf4] font-sans text-slate-950 md:flex-row">
+    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-950 md:flex-row">
       <Toaster position="bottom-center" toastOptions={{ className: 'font-sans' }} />
 
-      {/* Attached Control Panel */}
-      <div className="relative z-20 flex h-[54vh] w-full flex-shrink-0 flex-col border-slate-200 bg-white p-0 md:h-full md:w-[420px] md:border-r">
-        <ControlPanel
-          config={config}
-          update={update}
-          handleReset={handleReset}
-          handleImageUpload={handleImageUpload}
-          onBulkExport={handleBulkExport}
-          isExportingBulk={isExportingBulk}
-        />
-      </div>
+      <aside className="relative z-20 hidden h-full w-[72px] shrink-0 flex-col items-center border-r border-slate-800 bg-slate-950 px-2 py-3 md:flex">
+        <button
+          type="button"
+          onClick={() => setWorkspaceView('home')}
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-white font-display text-sm font-black text-slate-950 shadow-lg shadow-slate-950/20 transition hover:bg-violet-100"
+          title="Back to files"
+          aria-label="Back to files"
+        >
+          SM
+        </button>
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <StudioRailButton
+            active={activeTab === 'canvas' && selectedLayerId !== 'layer-bg-auto'}
+            icon={<MousePointer2 size={18} />}
+            label="Select"
+            onClick={() => setActiveTab('canvas')}
+          />
+          <StudioRailButton
+            active={selectedLayerId === 'layer-card-auto'}
+            icon={<MessageCircle size={18} />}
+            label="Card"
+            onClick={() => {
+              setActiveTab('canvas');
+              selectLayer('layer-card-auto');
+            }}
+          />
+          <StudioRailButton
+            active={selectedLayerId === 'layer-bg-auto'}
+            icon={<Palette size={18} />}
+            label="Background"
+            onClick={() => {
+              setActiveTab('canvas');
+              selectLayer('layer-bg-auto');
+            }}
+          />
+          <div className="my-2 h-px w-9 bg-slate-800" />
+          <StudioRailButton
+            icon={<TextIcon size={18} />}
+            label="Add text"
+            onClick={() => addCanvasLayer('text')}
+          />
+          <StudioRailButton
+            icon={<Square size={18} />}
+            label="Add shape"
+            onClick={() => addCanvasLayer('shape')}
+          />
+          <StudioRailButton
+            icon={<ImageIcon size={18} />}
+            label="Add image"
+            onClick={() => addCanvasLayer('image')}
+          />
+        </div>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <StudioRailButton
+            active={activeTab === 'animation'}
+            icon={<Video size={18} />}
+            label="Animate"
+            onClick={() => setActiveTab('animation')}
+          />
+          <StudioRailButton
+            icon={<Layers size={18} />}
+            label="Layers"
+            onClick={() => {
+              setActiveTab('canvas');
+              selectLayer(selectedLayerId || 'layer-card-auto');
+            }}
+          />
+        </div>
+      </aside>
 
       <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         
         <header className="flex min-h-[64px] flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-3 shadow-sm md:px-4">
           <div className="flex min-w-[180px] items-center gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[20px]">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[19px]">
               <span className={currentPlatform.color}>{currentPlatform.icon}</span>
             </div>
             <div className="min-w-0 flex-1">
@@ -609,22 +1158,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="order-3 flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 lg:order-none lg:w-[220px]">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Mode</span>
-            <select
-              value={config.platform}
-              onChange={(event) => update('platform', event.target.value as Platform)}
-              className="min-w-0 flex-1 cursor-pointer bg-transparent text-sm font-black text-slate-900 outline-none"
-              aria-label="Select platform mode"
-            >
-              {platformOptions.map(platform => (
-                <option key={platform.value} value={platform.value}>{platform.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <div className="mr-1 flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+          <div className="order-3 flex w-full justify-center lg:order-none lg:w-auto">
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
               <button
                 type="button"
                 onClick={() => setActiveTab('canvas')}
@@ -633,7 +1168,7 @@ const App: React.FC = () => {
                 }`}
               >
                 <ImageIcon size={16} />
-                <span className="hidden sm:inline">Image</span>
+                <span className="hidden sm:inline">Design</span>
               </button>
               <button
                 type="button"
@@ -643,7 +1178,33 @@ const App: React.FC = () => {
                 }`}
               >
                 <Video size={16} />
-                <span className="hidden sm:inline">Animation</span>
+                <span className="hidden sm:inline">Animate</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+
+            <div className="hidden h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 md:flex">
+              <button
+                type="button"
+                onClick={undo}
+                disabled={!canUndo}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                title={nextUndoLabel ? `Undo ${nextUndoLabel}` : 'Undo'}
+                aria-label="Undo"
+              >
+                <Undo2 size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={redo}
+                disabled={!canRedo}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                title={nextRedoLabel ? `Redo ${nextRedoLabel}` : 'Redo'}
+                aria-label="Redo"
+              >
+                <Redo2 size={16} />
               </button>
             </div>
 
@@ -730,7 +1291,7 @@ const App: React.FC = () => {
               isPlaying={isTimelinePlaying}
               progress={timelineProgress}
               duration={config.animationDuration}
-              onCanvasSelect={() => setSelectedLayerId('layer-bg-auto')}
+              onCanvasSelect={selectCanvas}
             >
               <CanvasLayerRenderer
                 config={config}
@@ -738,12 +1299,13 @@ const App: React.FC = () => {
                 activeBulkMessage={activeBulkMessage}
                 layers={config.canvas.layers}
                 selectedLayerId={selectedLayerId}
-                setSelectedLayerId={setSelectedLayerId}
+                setSelectedLayerId={selectLayer}
                 draggingLayerId={draggingLayerId}
                 showSelectionChrome={showSelectionChrome}
                 motionContext={motionContext}
                 registerLayerTarget={registerPreviewLayerTarget}
                 beginLayerDrag={beginLayerDrag}
+                beginLayerResize={beginLayerResize}
               />
             </PreviewCanvas>
           </section>
@@ -755,8 +1317,11 @@ const App: React.FC = () => {
             setActiveTab={setActiveTab}
             platformOptions={platformOptions}
             hasBulkMessages={hasBulkMessages}
+            onAvatarUpload={handleImageUpload}
+            onBulkExport={handleBulkExport}
             onExportPng={handleExport}
             onExportVideo={handleExportVideo}
+            isExportingBulk={isExportingBulk}
             isExportingVideo={isExportingVideo}
             activeConfig={activeConfig}
             selectedSceneIndex={safeSelectedSceneIndex}
@@ -766,10 +1331,12 @@ const App: React.FC = () => {
             duplicateActiveScene={duplicateActiveScene}
             deleteActiveScene={deleteActiveScene}
             selectedLayerId={selectedLayerId}
-            setSelectedLayerId={setSelectedLayerId}
+            selectedActionId={selectedActionId}
+            setSelectedLayerId={selectLayer}
+            selectAction={selectAction}
             setTimelineProgress={setPreviewProgress}
             updateLayer={updateLayer}
-            moveLayer={moveLayer}
+            reorderLayer={reorderLayer}
             resetLayerTransform={resetLayerTransform}
             addLayer={addCanvasLayer}
             duplicateLayer={duplicateLayer}
@@ -789,8 +1356,11 @@ const App: React.FC = () => {
           restartPlayback={restartTimelinePlayback}
           update={update}
           selectedLayerId={selectedLayerId}
-          setSelectedLayerId={setSelectedLayerId}
+          selectedActionId={selectedActionId}
+          setSelectedLayerId={selectLayer}
+          selectAction={selectAction}
           updateLayer={updateLayer}
+          reorderLayer={reorderLayer}
           selectedSceneIndex={safeSelectedSceneIndex}
           setSelectedSceneIndex={setSelectedSceneIndex}
         />
@@ -807,7 +1377,7 @@ const App: React.FC = () => {
                 activeBulkMessage={config.bulkMessages[bulkExportIndex]}
                 layers={config.canvas.layers}
                 selectedLayerId={selectedLayerId}
-                setSelectedLayerId={setSelectedLayerId}
+                setSelectedLayerId={selectLayer}
                 draggingLayerId={null}
                 showSelectionChrome={false}
                 motionContext={motionContext}

@@ -11,6 +11,8 @@ import YouTubeCard from '../YouTubeCard';
 import { CanvasLayerFrame } from './CanvasLayerFrame';
 import { renderLayerContent } from './renderLayerContent';
 
+import { ResizeHandle } from './CanvasLayerFrame';
+
 interface CanvasLayerRendererProps {
   config: CommentConfig;
   activeConfig: CommentConfig;
@@ -23,6 +25,7 @@ interface CanvasLayerRendererProps {
   motionContext: MotionContext;
   registerLayerTarget: (layerId: string, element: HTMLElement | null) => void;
   beginLayerDrag: (id: string, event: React.PointerEvent<HTMLElement>) => void;
+  beginLayerResize?: (id: string, handle: ResizeHandle, event: React.PointerEvent<Element>) => void;
   forExport?: boolean;
 }
 
@@ -55,6 +58,7 @@ export const CanvasLayerRenderer: React.FC<CanvasLayerRendererProps> = ({
   motionContext,
   registerLayerTarget,
   beginLayerDrag,
+  beginLayerResize,
   forExport = false,
 }) => {
   const orderedLayers = [...layers].sort((a, b) => a.zIndex - b.zIndex);
@@ -151,6 +155,7 @@ export const CanvasLayerRenderer: React.FC<CanvasLayerRendererProps> = ({
           registerLayerTarget={registerLayerTarget}
           onPointerDown={(event) => beginLayerDrag(layer.id, event)}
           onSelect={() => setSelectedLayerId(layer.id)}
+          onResizeHandlePointerDown={beginLayerResize ? (handle, event) => beginLayerResize(layer.id, handle, event) : undefined}
           className="absolute overflow-hidden rounded-[inherit]"
           baseStyle={{ left: 80, top: 80, width: layer.width, height: layer.height }}
         >

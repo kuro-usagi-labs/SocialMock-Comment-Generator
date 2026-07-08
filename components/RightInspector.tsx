@@ -1,12 +1,17 @@
 import React from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
+  ArrowLeftRight,
+  BadgeCheck,
+  CheckCircle,
+  Clock,
   CopyPlus,
+  Dices,
   Download,
   Eye,
   EyeOff,
   Film,
+  GripVertical,
+  Hash,
   Image as ImageIcon,
   Plus,
   Layers,
@@ -16,20 +21,30 @@ import {
   RotateCcw,
   Sparkles,
   Square,
+  ThumbsUp,
   Trash2,
   Type,
+  Upload,
+  User,
   Wand2,
 } from 'lucide-react';
 import {
   AnimationStyle,
   BulkMessage,
   CommentConfig,
+  DmStyle,
   EasingPreset,
   Layer,
   LayerActionBlock,
+  LayerActionProperty,
+  LayerActionPropertyValue,
+  PaddingSize,
   Platform,
   VideoExportFormat,
 } from '../types';
+import { BulkGenerator } from './BulkGenerator';
+import { BACKGROUND_GRADIENT_PRESETS } from '../utils/backgroundLayer';
+import { createRandomProfiles } from '../utils/profileUtils';
 
 interface RightInspectorProps {
   config: CommentConfig;
@@ -43,8 +58,11 @@ interface RightInspectorProps {
     color: string;
   }>;
   hasBulkMessages: boolean;
+  onAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onBulkExport: () => void;
   onExportPng: () => void;
   onExportVideo: (format: VideoExportFormat) => void;
+  isExportingBulk: boolean;
   isExportingVideo: boolean;
   activeConfig: CommentConfig;
   selectedSceneIndex: number;
@@ -54,10 +72,12 @@ interface RightInspectorProps {
   duplicateActiveScene: () => void;
   deleteActiveScene: () => void;
   selectedLayerId: string;
+  selectedActionId: string | null;
   setSelectedLayerId: (id: string) => void;
+  selectAction: (layerId: string, actionId: string) => void;
   setTimelineProgress: (value: number) => void;
   updateLayer: (id: string, patch: Partial<Layer>) => void;
-  moveLayer: (id: string, direction: 'up' | 'down') => void;
+  reorderLayer: (id: string, targetIndex: number) => void;
   resetLayerTransform: (id: string) => void;
   addLayer: (kind: 'text' | 'shape' | 'image') => void;
   duplicateLayer: (id: string) => void;
@@ -92,6 +112,18 @@ const easingOptions: Array<{ value: EasingPreset; label: string }> = [
   { value: 'custom', label: 'Custom' },
 ];
 
+const dmStyles: Array<{ value: DmStyle; label: string }> = [
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'imessage', label: 'iMessage' },
+];
+
+const paddingOptions: Array<{ value: PaddingSize; label: string }> = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'spacious', label: 'Spacious' },
+];
+
 const quickMotionPresets: Array<{
   label: string;
   inStyle: AnimationStyle;
@@ -108,6 +140,41 @@ const quickMotionPresets: Array<{
   { label: 'Pantul', inStyle: 'bounce-in', outStyle: 'fade-scale', easeIn: 'bounce', easeOut: 'ease-in', blur: false },
 ];
 
+const addActionPresets: Array<{
+  label: string;
+  description: string;
+  kind: LayerActionBlock['kind'];
+  style: AnimationStyle;
+  easingPreset: EasingPreset;
+  durationFrames: number;
+  intensity: number;
+  properties: LayerActionPropertyValue[];
+}> = [
+  { label: 'Fade in', description: 'Soft opacity and scale reveal', kind: 'in', style: 'fade-scale', easingPreset: 'ease-out', durationFrames: 36, intensity: 1, properties: [{ property: 'opacity', from: 0, to: 1 }, { property: 'scale', from: 0.97, to: 1 }] },
+  { label: 'Pop in', description: 'Snappy social-card entrance', kind: 'in', style: 'pop', easingPreset: 'back', durationFrames: 42, intensity: 1, properties: [{ property: 'opacity', from: 0, to: 1 }, { property: 'y', from: 10, to: 0 }, { property: 'scale', from: 0.94, to: 1 }] },
+  { label: 'Slide up', description: 'Clean lower-third motion', kind: 'in', style: 'slide-up', easingPreset: 'ease-out', durationFrames: 42, intensity: 0.8, properties: [{ property: 'opacity', from: 0, to: 1 }, { property: 'y', from: 34, to: 0 }] },
+  { label: 'Fade out', description: 'Simple exit action', kind: 'out', style: 'fade-scale', easingPreset: 'ease-in', durationFrames: 34, intensity: 1, properties: [{ property: 'opacity', from: 1, to: 0 }, { property: 'scale', from: 1, to: 0.97 }] },
+  { label: 'Wiggle', description: 'Attention beat in the middle', kind: 'emphasis', style: 'wiggle', easingPreset: 'elastic', durationFrames: 34, intensity: 0.9, properties: [{ property: 'rotate', from: -4, to: 4 }] },
+  { label: 'Zoom blur', description: 'Fast punchy transition', kind: 'emphasis', style: 'zoom-blur', easingPreset: 'ease-out', durationFrames: 38, intensity: 1.1, properties: [{ property: 'opacity', from: 0.65, to: 1 }, { property: 'scale', from: 0.92, to: 1 }, { property: 'blur', from: 6, to: 0 }] },
+];
+
+const actionPropertyOptions: Array<{ value: LayerActionProperty; label: string }> = [
+  { value: 'opacity', label: 'Opacity' },
+  { value: 'x', label: 'Move X' },
+  { value: 'y', label: 'Move Y' },
+  { value: 'scale', label: 'Scale' },
+  { value: 'rotate', label: 'Rotate' },
+  { value: 'blur', label: 'Blur' },
+];
+
+const actionPropertyLabel = (property: LayerActionProperty) => (
+  actionPropertyOptions.find(option => option.value === property)?.label || property
+);
+
+const actionPropertyStep = (property: LayerActionProperty) => (
+  property === 'opacity' || property === 'scale' ? 0.05 : 1
+);
+
 const findActionBlock = (layer: Layer, kind: LayerActionBlock['kind']) => {
   return layer.actionBlocks?.find(action => action.kind === kind);
 };
@@ -119,8 +186,11 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   setActiveTab,
   platformOptions,
   hasBulkMessages,
+  onAvatarUpload,
+  onBulkExport,
   onExportPng,
   onExportVideo,
+  isExportingBulk,
   isExportingVideo,
   activeConfig,
   selectedSceneIndex,
@@ -130,10 +200,12 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   duplicateActiveScene,
   deleteActiveScene,
   selectedLayerId,
+  selectedActionId,
   setSelectedLayerId,
+  selectAction,
   setTimelineProgress,
   updateLayer,
-  moveLayer,
+  reorderLayer,
   resetLayerTransform,
   addLayer,
   duplicateLayer,
@@ -143,9 +215,60 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   const selectedLayer = config.canvas.layers.find(layer => layer.id === selectedLayerId) || config.canvas.layers[1] || config.canvas.layers[0];
   const orderedLayers = [...config.canvas.layers].sort((a, b) => b.zIndex - a.zIndex);
   const activeBulkMessage = selectedSceneIndex > 0 ? sceneMessages[selectedSceneIndex - 1] : null;
-  const activeSceneLabel = selectedSceneIndex === 0 ? 'Main artboard' : activeBulkMessage?.displayName || `Variation ${selectedSceneIndex}`;
-  const isTopLayer = orderedLayers[0]?.id === selectedLayer?.id;
-  const isBottomLayer = orderedLayers[orderedLayers.length - 1]?.id === selectedLayer?.id;
+  const isDm = config.platform === 'dm';
+  const isText = config.platform === 'text';
+  const selectedAction = selectedActionId && selectedLayer?.actionBlocks
+    ? selectedLayer.actionBlocks.find(action => action.id === selectedActionId) ?? null
+    : null;
+
+  // --- Drag-reorder local state ---
+  const [dragRowId, setDragRowId] = React.useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null);
+  const reorderableIndices = orderedLayers
+    .filter(layer => layer.id !== 'layer-bg-auto')
+    .map((layer, visualIndex, items) => ({
+      id: layer.id,
+      visualIndex,
+      modelIndex: items.length - 1 - visualIndex,
+    }));
+
+  const layerRowOnPointerDown = (layerId: string, event: React.PointerEvent, sourceVisualIndex: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragRowId(layerId);
+    setDragOverIndex(sourceVisualIndex);
+    let latestVisualIndex = sourceVisualIndex;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      // Find which row the pointer is closest to
+      let bestIndex = sourceVisualIndex;
+      let bestDist = Infinity;
+      reorderableIndices.forEach(({ id, visualIndex }) => {
+        const rowEl = document.getElementById(`layer-row-${id}`);
+        if (!rowEl) return;
+        const rect = rowEl.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const dist = Math.abs(moveEvent.clientY - midY);
+        if (dist < bestDist) { bestDist = dist; bestIndex = visualIndex; }
+      });
+      latestVisualIndex = bestIndex;
+      setDragOverIndex(bestIndex);
+    };
+
+    const handleUp = () => {
+      const target = reorderableIndices.find(item => item.visualIndex === latestVisualIndex);
+      if (target && latestVisualIndex !== sourceVisualIndex) {
+        reorderLayer(layerId, target.modelIndex);
+      }
+      setDragRowId(null);
+      setDragOverIndex(null);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp, { once: true });
+  };
 
   const layerKindLabel = (layer: Layer) => {
     if (layer.type === 'background') return 'Background';
@@ -198,6 +321,141 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
     const previewFrame = layerOffset + previewStart + Math.max(1, Math.round(previewLength * 0.45));
     setActiveTab('animation');
     setTimelineProgress(Math.min(96, Math.max(0, (previewFrame / durationFramesTotal) * 100)));
+  };
+
+  const updateActionById = (layer: Layer, actionId: string, patch: Partial<LayerActionBlock>) => {
+    const currentActions = layer.actionBlocks || [];
+    const existing = currentActions.find(action => action.id === actionId);
+    if (!existing) return;
+    const nextAction = { ...existing, ...patch };
+    const nextActions = currentActions.map(action => action.id === actionId ? nextAction : action);
+
+    updateLayer(layer.id, {
+      actionBlocks: nextActions,
+      ...(patch.style && nextAction.kind === 'in' ? { animationInStyle: patch.style } : {}),
+      ...(patch.style && nextAction.kind === 'out' ? { animationOutStyle: patch.style } : {}),
+    } as Partial<Layer>);
+
+    const layerOffset = (layer.delayFrames || 0) + (layer.staggerFrames || 0);
+    const durationFramesTotal = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const previewFrame = layerOffset + nextAction.startFrame + Math.max(1, Math.round(nextAction.durationFrames * 0.45));
+    setActiveTab('animation');
+    setTimelineProgress(Math.min(96, Math.max(0, (previewFrame / durationFramesTotal) * 100)));
+  };
+
+  const duplicateActionById = (layer: Layer, actionId: string) => {
+    const currentActions = layer.actionBlocks || [];
+    const source = currentActions.find(action => action.id === actionId);
+    if (!source) return;
+    const durationFramesTotal = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const nextId = `${layer.id}-${source.kind}-${Date.now()}`;
+    const nextAction: LayerActionBlock = {
+      ...source,
+      id: nextId,
+      name: `${source.name} copy`,
+      properties: source.properties?.map(property => ({ ...property })),
+      startFrame: Math.min(
+        Math.max(0, durationFramesTotal - source.durationFrames),
+        source.startFrame + source.durationFrames + 4,
+      ),
+    };
+    updateLayer(layer.id, { actionBlocks: [...currentActions, nextAction] } as Partial<Layer>);
+    selectAction(layer.id, nextId);
+  };
+
+  const deleteActionById = (layer: Layer, actionId: string) => {
+    const currentActions = layer.actionBlocks || [];
+    updateLayer(layer.id, {
+      actionBlocks: currentActions.filter(action => action.id !== actionId),
+    } as Partial<Layer>);
+    setSelectedLayerId(layer.id);
+  };
+
+  const addActionToLayer = (
+    layer: Layer,
+    preset: (typeof addActionPresets)[number],
+  ) => {
+    const durationFramesTotal = Math.max(60, Math.round((config.animationDuration || 2) * 60));
+    const currentActions = layer.actionBlocks || [];
+    const lastEndFrame = currentActions.reduce((max, action) => (
+      Math.max(max, action.startFrame + action.durationFrames)
+    ), 0);
+    const preferredStart = preset.kind === 'out'
+      ? Math.max(0, durationFramesTotal - preset.durationFrames)
+      : preset.kind === 'emphasis'
+        ? Math.max(0, Math.round(durationFramesTotal * 0.45) - Math.round(preset.durationFrames / 2))
+        : Math.min(Math.max(0, durationFramesTotal - preset.durationFrames), lastEndFrame + 4);
+    const startFrame = Math.min(
+      Math.max(0, durationFramesTotal - preset.durationFrames),
+      preferredStart,
+    );
+    const actionId = `${layer.id}-${preset.kind}-${preset.style}-${Date.now()}`;
+    const nextAction: LayerActionBlock = {
+      id: actionId,
+      kind: preset.kind,
+      name: preset.label,
+      style: preset.style,
+      startFrame,
+      durationFrames: preset.durationFrames,
+      easingPreset: preset.easingPreset,
+      intensity: preset.intensity,
+      properties: preset.properties.map(property => ({ ...property })),
+    };
+
+    updateLayer(layer.id, {
+      actionBlocks: [...currentActions, nextAction],
+      ...(preset.kind === 'in' ? { animationInStyle: preset.style } : {}),
+      ...(preset.kind === 'out' ? { animationOutStyle: preset.style } : {}),
+    } as Partial<Layer>);
+    selectAction(layer.id, actionId);
+    setActiveTab('animation');
+    const previewFrame = startFrame + Math.max(1, Math.round(preset.durationFrames * 0.45));
+    setTimelineProgress(Math.min(96, Math.max(0, (previewFrame / durationFramesTotal) * 100)));
+  };
+
+  const updateActionPropertyByIndex = (
+    layer: Layer,
+    action: LayerActionBlock,
+    propertyIndex: number,
+    patch: Partial<LayerActionPropertyValue>,
+  ) => {
+    const properties = action.properties?.length
+      ? action.properties.map(property => ({ ...property }))
+      : [];
+    if (!properties[propertyIndex]) return;
+    properties[propertyIndex] = { ...properties[propertyIndex], ...patch };
+    updateActionById(layer, action.id, { properties });
+  };
+
+  const addActionProperty = (
+    layer: Layer,
+    action: LayerActionBlock,
+    property: LayerActionProperty,
+  ) => {
+    const defaults: Record<LayerActionProperty, LayerActionPropertyValue> = {
+      opacity: { property: 'opacity', from: action.kind === 'out' ? 1 : 0, to: action.kind === 'out' ? 0 : 1 },
+      x: { property: 'x', from: action.kind === 'out' ? 0 : 36, to: action.kind === 'out' ? -36 : 0 },
+      y: { property: 'y', from: action.kind === 'out' ? 0 : 34, to: action.kind === 'out' ? 34 : 0 },
+      scale: { property: 'scale', from: action.kind === 'out' ? 1 : 0.94, to: action.kind === 'out' ? 0.96 : 1 },
+      rotate: { property: 'rotate', from: action.kind === 'out' ? 0 : -8, to: action.kind === 'out' ? 8 : 0 },
+      blur: { property: 'blur', from: action.kind === 'out' ? 0 : 8, to: action.kind === 'out' ? 8 : 0 },
+    };
+    const properties = [
+      ...(action.properties?.map(currentProperty => ({ ...currentProperty })) || []),
+      { ...defaults[property] },
+    ];
+    updateActionById(layer, action.id, { properties });
+  };
+
+  const deleteActionProperty = (
+    layer: Layer,
+    action: LayerActionBlock,
+    propertyIndex: number,
+  ) => {
+    const properties = (action.properties || [])
+      .filter((_, index) => index !== propertyIndex)
+      .map(property => ({ ...property }));
+    updateActionById(layer, action.id, { properties });
   };
 
   const buildLayerActions = (
@@ -258,12 +516,16 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
   };
 
   const syncBackground = (type: CommentConfig['backgroundType'], value?: string) => {
+    const gradient = BACKGROUND_GRADIENT_PRESETS.find(preset => preset.value === value) || BACKGROUND_GRADIENT_PRESETS[0];
     update('backgroundType', type);
     if (value) update('backgroundColor', value);
     if (selectedLayer?.type === 'background') {
       updateLayer(selectedLayer.id, {
         bgKind: type === 'gradient' ? 'linear-gradient' : 'solid',
-        bgColor1: value || (type === 'solid' ? config.backgroundColor : '#f8fafc'),
+        visible: type !== 'transparent',
+        bgColor1: type === 'gradient' ? gradient.color1 : (value || (type === 'solid' ? config.backgroundColor : '#f8fafc')),
+        bgColor2: type === 'gradient' ? gradient.color2 : selectedLayer.bgColor2,
+        bgGradientAngle: type === 'gradient' ? gradient.angle : selectedLayer.bgGradientAngle,
       } as Partial<Layer>);
     }
   };
@@ -284,8 +546,39 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
     update(field, value);
   };
 
+  const updateActiveProfile = (patch: Partial<Pick<BulkMessage, 'avatarColor' | 'avatarInitials' | 'avatarUrl' | 'displayName' | 'username'>>) => {
+    if (activeBulkMessage) {
+      updateActiveSceneMessage(patch);
+      return;
+    }
+
+    Object.entries(patch).forEach(([key, value]) => {
+      update(key as keyof CommentConfig, value);
+    });
+  };
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeBulkMessage) {
+      onAvatarUpload(event);
+      return;
+    }
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      updateActiveSceneMessage({ avatarUrl: reader.result as string });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRandomizeProfile = () => {
+    const profile = createRandomProfiles(1, 'id', Math.random() > 0.5 ? 'male' : 'female')[0];
+    updateActiveProfile(profile);
+  };
+
   return (
-    <aside className="hidden h-full w-[316px] shrink-0 flex-col border-l border-slate-200 bg-white xl:flex">
+    <aside className="hidden h-full w-[360px] shrink-0 flex-col border-l border-slate-200 bg-white xl:flex">
       <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -297,29 +590,6 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
             {activeTab === 'animation' ? <Film size={18} /> : <Layers size={18} />}
           </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('canvas')}
-            className={`flex h-9 items-center justify-center gap-2 rounded-md text-xs font-black transition ${
-              activeTab === 'canvas' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <ImageIcon size={14} />
-            Design
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('animation')}
-            className={`flex h-9 items-center justify-center gap-2 rounded-md text-xs font-black transition ${
-              activeTab === 'animation' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Play size={14} />
-            Animate
-          </button>
         </div>
       </div>
 
@@ -368,7 +638,6 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   ))}
                 </select>
                 <div className="mt-2 flex items-center gap-2 overflow-hidden">
-                  <span className="truncate text-sm font-black text-slate-900">{activeSceneLabel}</span>
                   {activeBulkMessage && (
                     <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">Bulk</span>
                   )}
@@ -427,83 +696,326 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                   Image
                 </button>
               </div>
-              {orderedLayers.map((layer) => (
-                <div
-                  key={layer.id}
-                  className={`flex w-full items-center gap-2 rounded-[16px] border px-2 py-2 text-left transition ${
-                    selectedLayer?.id === layer.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLayerId(layer.id)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <span className="block truncate text-sm font-black text-slate-800">{layerKindLabel(layer)}</span>
-                    <span className="block truncate text-xs font-bold capitalize text-slate-400">
-                      {layer.type === 'background'
-                        ? config.backgroundType
-                        : layer.type === 'card'
-                          ? `${config.width}px`
-                          : layer.type === 'text'
-                            ? (layer.id === 'layer-overlay-auto' && config.platform === 'dm' ? 'Bubble' : 'Text')
-                            : layer.type}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateLayer(layer.id, { visible: !layer.visible } as Partial<Layer>)}
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition ${
-                      layer.visible ? 'text-slate-500 hover:bg-white' : 'bg-slate-100 text-slate-300'
-                    }`}
-                    title={layer.visible ? 'Hide layer' : 'Show layer'}
-                    aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
-                  >
-                    {layer.visible ? <Eye size={15} /> : <EyeOff size={15} />}
-                  </button>
-                </div>
-              ))}
+              {orderedLayers.map((layer) => {
+                const isBg = layer.id === 'layer-bg-auto';
+                const ri = reorderableIndices.find(item => item.id === layer.id);
+                const sourceIndex = ri !== undefined ? ri.visualIndex : -1;
+                const isDragging = dragRowId === layer.id;
+                const isDropTarget = dragRowId && dragRowId !== layer.id && dragOverIndex !== null && ri !== undefined && dragOverIndex === sourceIndex;
+
+                return (
+                  <React.Fragment key={layer.id}>
+                    {/* Insertion line above drop target */}
+                    {isDropTarget && (
+                      <div className="relative mx-1 -mb-px h-0.5 bg-indigo-500 pointer-events-none rounded-full" />
+                    )}
+                    <div
+                      id={`layer-row-${layer.id}`}
+                      className={`relative flex w-full items-center gap-2 rounded-[16px] border px-2 py-2 text-left transition ${
+                        selectedLayer?.id === layer.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                      } ${isDragging ? 'opacity-60 scale-[1.02] shadow-lg' : ''}`}
+                    >
+                      {!isBg && (
+                        <div
+                          role="button"
+                          aria-label={`Drag to reorder ${layerKindLabel(layer)}`}
+                          className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing select-none"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            layerRowOnPointerDown(layer.id, event, sourceIndex);
+                          }}
+                          title="Drag to reorder"
+                        >
+                          <GripVertical size={14} />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLayerId(layer.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <span className="block truncate text-sm font-black text-slate-800">
+                          {layerKindLabel(layer)}
+                          {isBg && <span className="ml-1.5 text-[10px] font-bold text-slate-400">(locked)</span>}
+                        </span>
+                        <span className="block truncate text-xs font-bold capitalize text-slate-400">
+                          {layer.type === 'background'
+                            ? config.backgroundType
+                            : layer.type === 'card'
+                              ? `${config.width}px`
+                              : layer.type === 'text'
+                                ? (layer.id === 'layer-overlay-auto' && config.platform === 'dm' ? 'Bubble' : 'Text')
+                                : layer.type}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateLayer(layer.id, { visible: !layer.visible } as Partial<Layer>)}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition ${
+                          layer.visible ? 'text-slate-500 hover:bg-white' : 'bg-slate-100 text-slate-300'
+                        }`}
+                        title={layer.visible ? 'Hide layer' : 'Show layer'}
+                        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
+                      >
+                        {layer.visible ? <Eye size={15} /> : <EyeOff size={15} />}
+                      </button>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
               {selectedLayer && (
-                <div className="grid grid-cols-4 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => moveLayer(selectedLayer.id, 'up')}
-                    disabled={isTopLayer}
-                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ArrowUp size={14} />
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveLayer(selectedLayer.id, 'down')}
-                    disabled={isBottomLayer}
-                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ArrowDown size={14} />
-                    Down
-                  </button>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => duplicateLayer(selectedLayer.id)}
                     disabled={selectedLayer.type === 'background'}
-                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                    title="Duplicate layer"
+                    aria-label="Duplicate layer"
                   >
                     <CopyPlus size={14} />
-                    Copy
+                    Duplicate
                   </button>
                   <button
                     type="button"
                     onClick={() => deleteLayer(selectedLayer.id)}
                     disabled={['layer-bg-auto', 'layer-card-auto', 'layer-overlay-auto'].includes(selectedLayer.id)}
-                    className="flex h-9 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    title="Delete layer"
+                    aria-label="Delete layer"
                   >
                     <Trash2 size={14} />
-                    Del
+                    Delete
                   </button>
                 </div>
               )}
             </section>
+
+            {selectedLayer && (selectedLayer.type === 'card' || selectedLayer.id === 'layer-overlay-auto') && (
+              <section className="space-y-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <MessageCircle size={15} className="text-indigo-500" />
+                    <p className={panelLabel}>Content</p>
+                  </div>
+                  {!isText && (
+                    <button
+                      type="button"
+                      onClick={handleRandomizeProfile}
+                      className="flex h-8 items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-2.5 text-[11px] font-black text-indigo-700 transition hover:bg-indigo-100"
+                      title="Randomize profile"
+                    >
+                      <Dices size={13} />
+                      Auto
+                    </button>
+                  )}
+                </div>
+
+                {isDm && (
+                  <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                      <ArrowLeftRight size={14} />
+                      DM style
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {dmStyles.map(style => (
+                        <button
+                          key={style.value}
+                          type="button"
+                          onClick={() => update('dmStyle', style.value)}
+                          className={`h-9 rounded-lg border text-[11px] font-black transition ${
+                            config.dmStyle === style.value
+                              ? 'border-slate-950 bg-slate-950 text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {style.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => update('isMe', !config.isMe)}
+                      className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs font-black transition ${
+                        config.isMe
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 bg-white text-slate-600'
+                      }`}
+                    >
+                      {config.isMe ? 'Sent bubble' : 'Received bubble'}
+                    </button>
+                  </div>
+                )}
+
+                {!isText && (
+                  <div className="flex gap-3">
+                    <div className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                      {activeConfig.avatarUrl ? (
+                        <img src={activeConfig.avatarUrl} alt="Avatar preview" className="h-full w-full object-cover" />
+                      ) : (
+                        <div
+                          className="flex h-full w-full items-center justify-center text-2xl font-black text-white"
+                          style={{ backgroundColor: activeConfig.avatarColor }}
+                        >
+                          {activeConfig.avatarInitials}
+                        </div>
+                      )}
+                      <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-slate-950/65 text-white opacity-0 transition group-hover:opacity-100">
+                        <Upload size={16} />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
+                      </label>
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="grid grid-cols-[48px_1fr] gap-2">
+                        <input
+                          type="color"
+                          value={activeConfig.avatarColor}
+                          onChange={(event) => updateActiveProfile({ avatarColor: event.target.value })}
+                          className="h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1"
+                          aria-label="Avatar color"
+                        />
+                        <input
+                          type="text"
+                          value={activeConfig.avatarInitials}
+                          onChange={(event) => updateActiveProfile({ avatarInitials: event.target.value.toUpperCase().slice(0, 2) })}
+                          className={fieldClass}
+                          placeholder="Initials"
+                          maxLength={2}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={activeConfig.avatarUrl || ''}
+                        onChange={(event) => updateActiveProfile({ avatarUrl: event.target.value || null })}
+                        className={fieldClass}
+                        placeholder="Avatar image URL"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {!isText && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block space-y-1.5">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        <User size={13} />
+                        Name
+                      </span>
+                      <input
+                        value={activeConfig.displayName}
+                        onChange={(event) => updateActiveIdentity('displayName', event.target.value)}
+                        className={fieldClass}
+                      />
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        <Hash size={13} />
+                        Handle
+                      </span>
+                      <input
+                        value={activeConfig.username}
+                        onChange={(event) => updateActiveIdentity('username', event.target.value)}
+                        className={fieldClass}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {!isText && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block space-y-1.5">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        <Clock size={13} />
+                        Time
+                      </span>
+                      <input
+                        value={config.timestamp}
+                        onChange={(event) => update('timestamp', event.target.value)}
+                        className={fieldClass}
+                        placeholder={isDm ? 'Today' : '2h'}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => update('isVerified', !config.isVerified)}
+                      disabled={isDm}
+                      className={`mt-[22px] flex h-[42px] items-center justify-center gap-2 rounded-xl border text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        config.isVerified
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      <BadgeCheck size={15} />
+                      Verified
+                    </button>
+                  </div>
+                )}
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500">{isText ? 'Text' : isDm ? 'Message' : 'Comment'}</span>
+                  <textarea
+                    value={activeConfig.content}
+                    onChange={(event) => updateActiveContent(event.target.value)}
+                    className={`${fieldClass} min-h-[112px] resize-none leading-relaxed`}
+                    placeholder={isText ? 'Write overlay text...' : isDm ? 'Write a DM message...' : 'Write a comment...'}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-500">Font size</span>
+                    <span className="text-xs font-black text-indigo-600">{config.fontSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={isText ? '16' : '12'}
+                    max="32"
+                    value={config.fontSize}
+                    onChange={(event) => update('fontSize', parseInt(event.target.value))}
+                    className="w-full accent-indigo-600"
+                  />
+                </label>
+
+                {!isDm && !isText && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block space-y-1.5">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        <ThumbsUp size={13} />
+                        Likes
+                      </span>
+                      <input
+                        value={config.likes}
+                        onChange={(event) => update('likes', event.target.value)}
+                        className={fieldClass}
+                      />
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        <MessageCircle size={13} />
+                        Replies
+                      </span>
+                      <input
+                        value={config.replies}
+                        onChange={(event) => update('replies', event.target.value)}
+                        className={fieldClass}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => update('showStats', !config.showStats)}
+                      className={`col-span-2 flex h-10 items-center justify-center gap-2 rounded-xl border text-xs font-black transition ${
+                        config.showStats
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-slate-200 bg-white text-slate-500'
+                      }`}
+                    >
+                      <CheckCircle size={15} />
+                      Stats row
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
 
             {selectedLayer && (
               <section className="space-y-3">
@@ -678,6 +1190,23 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                       />
                     </label>
                   )}
+                  {config.backgroundType === 'gradient' && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {BACKGROUND_GRADIENT_PRESETS.map(gradient => (
+                        <button
+                          key={gradient.value}
+                          type="button"
+                          onClick={() => syncBackground('gradient', gradient.value)}
+                          className={`h-12 rounded-xl border border-white shadow-sm transition hover:scale-[1.03] ${
+                            config.backgroundColor === gradient.value ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
+                          }`}
+                          style={{ backgroundImage: gradient.value }}
+                          title={gradient.label}
+                          aria-label={`Use ${gradient.label} gradient`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -715,6 +1244,25 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                     />
                     <div className="text-right text-xs font-black text-indigo-600">{config.width}px</div>
                   </label>
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold text-slate-500">Padding</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {paddingOptions.map(padding => (
+                        <button
+                          key={padding.value}
+                          type="button"
+                          onClick={() => update('padding', padding.value)}
+                          className={`h-9 rounded-xl border text-[11px] font-black transition ${
+                            config.padding === padding.value
+                              ? 'border-slate-950 bg-slate-950 text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {padding.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -935,9 +1483,305 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                 </>
               )}
             </section>
+
+            {!isText && (
+              <section className="space-y-3 rounded-[18px] border border-indigo-100 bg-indigo-50/70 p-3">
+                <div className="flex items-center gap-2">
+                  <Wand2 size={15} className="text-indigo-500" />
+                  <p className={panelLabel}>AI Variations</p>
+                </div>
+                <BulkGenerator
+                  config={config}
+                  update={update}
+                  onBulkExport={onBulkExport}
+                  isExportingBulk={isExportingBulk}
+                />
+              </section>
+            )}
+
+            <section className="space-y-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center gap-2">
+                <Download size={15} className="text-indigo-500" />
+                <p className={panelLabel}>Export</p>
+              </div>
+              <button
+                type="button"
+                onClick={onExportPng}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-black text-white transition hover:bg-indigo-600"
+              >
+                <ImageIcon size={15} />
+                Export PNG
+              </button>
+              <div className="grid grid-cols-4 gap-2">
+                {(['mp4', 'webm', 'gif', 'mov'] as VideoExportFormat[]).map(format => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => onExportVideo(format)}
+                    disabled={isExportingVideo}
+                    className="h-9 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {format}
+                  </button>
+                ))}
+              </div>
+              {hasBulkMessages && (
+                <button
+                  type="button"
+                  onClick={onBulkExport}
+                  disabled={isExportingBulk}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download size={15} />
+                  Export bulk PNG
+                </button>
+              )}
+            </section>
           </div>
         ) : (
           <div className="space-y-5">
+            {selectedLayer && selectedAction && (
+              <section className="space-y-3 rounded-[18px] border border-violet-200 bg-violet-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={panelLabel}>Action</p>
+                    <h3 className="mt-1 truncate text-sm font-black text-slate-900">{selectedAction.name}</h3>
+                    <p className="mt-0.5 truncate text-xs font-bold text-violet-700">
+                      {layerKindLabel(selectedLayer)} · {selectedAction.kind}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => duplicateActionById(selectedLayer, selectedAction.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm transition hover:bg-violet-100"
+                      title="Duplicate action"
+                      aria-label="Duplicate selected action"
+                    >
+                      <CopyPlus size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteActionById(selectedLayer, selectedAction.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 shadow-sm transition hover:bg-rose-100"
+                      title="Delete action"
+                      aria-label="Delete selected action"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500">Name</span>
+                  <input
+                    value={selectedAction.name}
+                    onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { name: event.target.value })}
+                    className={fieldClass}
+                    aria-label="Action name"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Kind</span>
+                    <select
+                      value={selectedAction.kind}
+                      onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { kind: event.target.value as LayerActionBlock['kind'] })}
+                      className={fieldClass}
+                      aria-label="Action kind"
+                    >
+                      <option value="in">In</option>
+                      <option value="out">Out</option>
+                      <option value="emphasis">Emphasis</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-slate-500">Effect</span>
+                    <select
+                      value={selectedAction.style}
+                      onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { style: event.target.value as AnimationStyle })}
+                      className={fieldClass}
+                      aria-label="Action effect"
+                    >
+                      {motionPresets.map(preset => (
+                        <option key={preset.value} value={preset.value}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500">Easing</span>
+                  <select
+                    value={selectedAction.easingPreset}
+                    onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { easingPreset: event.target.value as EasingPreset })}
+                    className={fieldClass}
+                    aria-label="Action easing"
+                  >
+                    {easingOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="space-y-2 rounded-[16px] border border-violet-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-slate-700">Motion properties</span>
+                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-600">
+                      {(selectedAction.properties || []).length} tracks
+                    </span>
+                  </div>
+
+                  {(selectedAction.properties || []).length > 0 ? (
+                    <div className="space-y-2">
+                      {(selectedAction.properties || []).map((property, propertyIndex) => (
+                        <div
+                          key={`${selectedAction.id}-${propertyIndex}-${property.property}`}
+                          className="rounded-xl border border-slate-100 bg-slate-50 p-2"
+                        >
+                          <div className="mb-2 flex items-center gap-2">
+                            <select
+                              value={property.property}
+                              onChange={(event) => updateActionPropertyByIndex(
+                                selectedLayer,
+                                selectedAction,
+                                propertyIndex,
+                                { property: event.target.value as LayerActionProperty },
+                              )}
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-700 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                              aria-label={`Action property ${propertyIndex + 1} type`}
+                            >
+                              {actionPropertyOptions.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => deleteActionProperty(selectedLayer, selectedAction, propertyIndex)}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-rose-500 transition hover:bg-rose-50"
+                              aria-label={`Delete action property ${actionPropertyLabel(property.property)}`}
+                              title="Delete property"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="block space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">From</span>
+                              <input
+                                type="number"
+                                step={actionPropertyStep(property.property)}
+                                value={property.from}
+                                onChange={(event) => updateActionPropertyByIndex(
+                                  selectedLayer,
+                                  selectedAction,
+                                  propertyIndex,
+                                  { from: Number(event.target.value) },
+                                )}
+                                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-700 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                                aria-label={`Action property ${actionPropertyLabel(property.property)} from`}
+                              />
+                            </label>
+                            <label className="block space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">To</span>
+                              <input
+                                type="number"
+                                step={actionPropertyStep(property.property)}
+                                value={property.to}
+                                onChange={(event) => updateActionPropertyByIndex(
+                                  selectedLayer,
+                                  selectedAction,
+                                  propertyIndex,
+                                  { to: Number(event.target.value) },
+                                )}
+                                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-700 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                                aria-label={`Action property ${actionPropertyLabel(property.property)} to`}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-violet-100 bg-violet-50/60 px-3 py-2 text-[11px] font-bold leading-relaxed text-violet-700">
+                      Legacy action. Add a property track to make this action editable by value.
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {actionPropertyOptions.map(option => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => addActionProperty(selectedLayer, selectedAction, option.value)}
+                        className="rounded-lg border border-violet-100 bg-violet-50 px-2 py-2 text-[10px] font-black text-violet-700 transition hover:border-violet-200 hover:bg-violet-100"
+                      >
+                        + {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-[16px] border border-violet-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-slate-700">Timing</span>
+                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-600">
+                      {selectedAction.startFrame}f · {selectedAction.durationFrames}f
+                    </span>
+                  </div>
+                  <label className="block space-y-1.5">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-[11px] font-bold text-slate-500">Start frame</span>
+                      <span className="text-[11px] font-black text-violet-600">{selectedAction.startFrame}f</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max={Math.max(60, Math.round((config.animationDuration || 2) * 60))}
+                      value={selectedAction.startFrame}
+                      onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { startFrame: Number(event.target.value) })}
+                      className="w-full accent-violet-600"
+                      aria-label="Action start frame"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-[11px] font-bold text-slate-500">Duration</span>
+                      <span className="text-[11px] font-black text-violet-600">{selectedAction.durationFrames}f</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max={Math.max(12, Math.round((config.animationDuration || 2) * 60))}
+                      value={selectedAction.durationFrames}
+                      onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { durationFrames: Number(event.target.value) })}
+                      className="w-full accent-violet-600"
+                      aria-label="Action duration"
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-500">Intensity</span>
+                    <span className="text-xs font-black text-violet-600">{Math.round((selectedAction.intensity ?? 1) * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.2"
+                    max="1.8"
+                    step="0.05"
+                    value={selectedAction.intensity ?? 1}
+                    onChange={(event) => updateActionById(selectedLayer, selectedAction.id, { intensity: Number(event.target.value) })}
+                    className="w-full accent-violet-600"
+                    aria-label="Action intensity"
+                  />
+                </label>
+              </section>
+            )}
+
             <section className="space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={15} className="text-indigo-500" />
@@ -962,6 +1806,37 @@ const RightInspectorComponent: React.FC<RightInspectorProps> = ({
                 ))}
               </div>
             </section>
+
+            {selectedLayer && selectedLayer.type !== 'background' && (
+              <section className="space-y-3 rounded-[18px] border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Plus size={15} className="text-indigo-500" />
+                    <p className={panelLabel}>New action</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    {layerKindLabel(selectedLayer)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {addActionPresets.map(preset => (
+                    <button
+                      key={`${preset.kind}-${preset.style}-${preset.label}`}
+                      type="button"
+                      onClick={() => addActionToLayer(selectedLayer, preset)}
+                      className="group rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                    >
+                      <span className="block text-xs font-black text-slate-900 group-hover:text-indigo-700">
+                        {preset.label}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] font-bold text-slate-400">
+                        {preset.kind} · {preset.durationFrames}f
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {selectedLayer && (
               <section className="space-y-3 rounded-[18px] border border-indigo-100 bg-indigo-50/70 p-3">

@@ -2,15 +2,33 @@ import React from 'react';
 import { AbsoluteFill } from 'remotion';
 import { AnimatedCard } from './AnimatedCard';
 import { CommentConfig, BulkMessage } from '../../types';
+import { resolveCanvasBackgroundStyle } from '../../utils/backgroundLayer';
 
 export const MainComposition: React.FC<{ config: CommentConfig; message?: BulkMessage }> = ({ config, message }) => {
-  // If greenscreen is enabled, set a bright green background
-  const backgroundColor = config.greenscreen ? '#00FF00' : 'transparent';
+  // Greenscreen override — always take priority
+  if (config.greenscreen) {
+    return (
+      <AbsoluteFill
+        style={{
+          backgroundColor: '#00FF00',
+          justifyContent: 'center',
+          alignItems: 'center',
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale',
+          textRendering: 'geometricPrecision',
+        }}
+      >
+        <AnimatedCard config={config} message={message} />
+      </AbsoluteFill>
+    );
+  }
+
+  const background = resolveCanvasBackgroundStyle(config);
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor,
+        backgroundColor: 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
         WebkitFontSmoothing: 'antialiased',
@@ -18,7 +36,17 @@ export const MainComposition: React.FC<{ config: CommentConfig; message?: BulkMe
         textRendering: 'geometricPrecision',
       }}
     >
-      <AnimatedCard config={config} message={message} />
+      {background.hasVisibleBackground && (
+        <AbsoluteFill style={background.style} />
+      )}
+      <AbsoluteFill
+        style={{
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <AnimatedCard config={config} message={message} />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };

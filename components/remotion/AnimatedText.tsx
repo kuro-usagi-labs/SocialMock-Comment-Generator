@@ -80,15 +80,8 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });
-        const pop = spring({
-          frame: Math.max(0, frame - tokenStart),
-          fps,
-          durationInFrames: duration,
-          config: { damping: 12, mass: 0.45, stiffness: 180 },
-        });
-
         const style: React.CSSProperties = {
-          display: mode === 'letter' ? 'inline-block' : 'inline-block',
+          display: mode === 'letter' ? 'inline-block' : 'inline',
           whiteSpace: 'pre-wrap',
         };
 
@@ -98,6 +91,12 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
         } else if (preset === 'typewriter') {
           style.opacity = progress >= 1 ? 1 : 0;
         } else if (preset === 'pop') {
+          const pop = spring({
+            frame: Math.max(0, frame - tokenStart),
+            fps,
+            durationInFrames: duration,
+            config: { damping: 12, mass: 0.45, stiffness: 180 },
+          });
           style.opacity = progress;
           style.transform = `scale(${0.78 + pop * 0.22})`;
         }

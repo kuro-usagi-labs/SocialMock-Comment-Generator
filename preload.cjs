@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // === New Remotion-based rendering API ===
   renderVideo: (options) => ipcRenderer.invoke('render-video', options),
+  generateVariations: (params) => ipcRenderer.invoke('generate-variations', params),
   onRenderProgress: (callback) => {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on('render-progress', handler);
