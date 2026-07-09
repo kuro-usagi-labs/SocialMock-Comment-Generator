@@ -155,20 +155,23 @@ All 16 milestones from DEVELOPMENT_ROADMAP.md have been implemented. The app has
 
 ## UI/UX Feedback (vs Jitter.video)
 
-### Already Good:
-- Dashboard layout with sidebar + grid
-- Template cards with visual previews
-- Editor shell with left rail + canvas + right inspector + timeline
-- Dark sidebar rail with tool buttons
-- Timeline with action blocks, playhead, drag/resize
+### Already Implemented (matching Jitter):
+- ✅ **Dark editor header** — slate-900, compact 48px height
+- ✅ **Dark timeline** — slate-950 track, proper contrast
+- ✅ **Compact controls** — smaller undo/redo/zoom/export buttons
+- ✅ **Violet accent** — consistent brand color (not AI-default purple)
+- ✅ **Scrollable dashboard** — body overflow fixed
+- ✅ **Template gallery** — 12 templates across 11 categories
+- ✅ **Motion preset gallery** — 17 presets with group filtering
+- ✅ **Inspector components** — CollapsibleSection, NumericScrubInput, ColorSwatchInput
 
 ### Areas for Future Improvement:
 1. **Template preview animations** — Jitter has animated GIF previews, we have static color blocks
-2. **Dark editor theme** — Jitter uses dark background, we use light
-3. **Compact header bar** — Jitter is 48px, ours is ~64px
-4. **Canvas zoom slider** — Jitter has zoom slider in bottom-right
-5. **Layer tree hierarchy** — Jitter has nested tree with expand/collapse
-6. **Animate tab UX** — Jitter is preset-first (pick style → edit mode/direction/duration)
+2. **Canvas zoom slider** — Jitter has zoom slider in bottom-right
+3. **Layer tree hierarchy** — Jitter has nested tree with expand/collapse
+4. **Animate tab UX** — Jitter is preset-first (pick style → edit mode/direction/duration)
+5. **Keyboard shortcut toast** — Ctrl+S should show "Saved" toast
+6. **Context menu positioning** — clamp to viewport bounds
 
 ---
 
