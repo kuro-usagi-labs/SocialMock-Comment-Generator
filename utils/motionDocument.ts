@@ -1,4 +1,4 @@
-import { CommentConfig, INITIAL_CONFIG, MotionDocument, MotionDocumentSettings } from '../types';
+import { CommentConfig, CURRENT_DOCUMENT_SCHEMA, INITIAL_CONFIG, MotionDocument, MotionDocumentSettings, ExportSettings } from '../types';
 
 const cloneConfig = (config: CommentConfig): CommentConfig => {
   if (typeof structuredClone === 'function') {
@@ -19,10 +19,12 @@ export const createMotionDocument = (
 ): MotionDocument => {
   const createdAt = Date.now();
   const isoCreatedAt = new Date(createdAt).toISOString();
+  const width = config.width || 1080;
+  const height = config.height || config.width || 1080;
   return {
     id: `motion-doc-${createdAt}`,
     title: options.title || 'Untitled motion',
-    version: 1,
+    schemaVersion: CURRENT_DOCUMENT_SCHEMA,
     metadata: {
       createdAt: isoCreatedAt,
       updatedAt: isoCreatedAt,
@@ -36,6 +38,21 @@ export const createMotionDocument = (
         format: 'mp4',
         transparentBackground: false,
       },
+    },
+    exportSettings: {
+      format: 'mp4',
+      transparentBackground: false,
+      fps: 60,
+      preset: 'square-1080',
+      width,
+      height,
+      quality: 90,
+    },
+    assets: [],
+    timeline: {
+      scrollX: 0,
+      zoomX: 1,
+      visibleRange: { start: 0, end: 120 },
     },
     activeSceneId: 'scene-main',
     scenes: [
@@ -93,4 +110,58 @@ export const updateMotionDocumentSettings = (
       updatedAt: new Date().toISOString(),
     },
   };
+};
+
+/**
+ * Update the v2 exportSettings on a MotionDocument.
+ * Also syncs the legacy settings.export for backward compatibility.
+ */
+export const updateExportSettings = (
+  document: MotionDocument,
+  updater: Partial<ExportSettings> | ((settings: ExportSettings) => ExportSettings),
+): MotionDocument => {
+  const nextExport = typeof updater === 'function'
+    ? updater(document.exportSettings)
+    : { ...document.exportSettings, ...updater };
+
+  return {
+    ...document,
+    exportSettings: nextExport,
+    settings: {
+      ...document.settings,
+      fps: nextExport.fps,
+      export: {
+        format: nextExport.format,
+        transparentBackground: nextExport.transparentBackground,
+      },
+    },
+    metadata: {
+      ...document.metadata,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
+
+// ---------------------------------------------------------------
+// Serialization helpers
+// ---------------------------------------------------------------
+
+/**
+ * Serialize a MotionDocument to a JSON string.
+ * Uses 2-space indentation for readability.
+ */
+export const serializeDocument = (document: MotionDocument): string => {
+  return JSON.stringify(document, null, 2);
+};
+
+/**
+ * Deserialize a JSON string back to a MotionDocument.
+ * Does NOT apply migrations — use unwrapLoadedFile for files from disk.
+ */
+export const deserializeDocument = (json: string): MotionDocument => {
+  const parsed = JSON.parse(json) as MotionDocument;
+  if (!parsed || typeof parsed !== 'object' || !parsed.id) {
+    throw new Error('Invalid document JSON: missing id');
+  }
+  return parsed;
 };

@@ -9,6 +9,7 @@ export interface SavedMotionProject {
   createdAt: string;
   sourceTemplateId?: string;
   document: MotionDocument;
+  filePath?: string;  // Absolute path to .socialmock file (undefined = localStorage-only)
 }
 
 const cloneDocument = (document: MotionDocument): MotionDocument => {
@@ -44,7 +45,7 @@ const persistProjects = (projects: SavedMotionProject[]) => {
   window.localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(sortProjects(projects)));
 };
 
-export const saveMotionProject = (document: MotionDocument): SavedMotionProject => {
+export const saveMotionProject = (document: MotionDocument, filePath?: string): SavedMotionProject => {
   const cloned = cloneDocument(document);
   const nextProject: SavedMotionProject = {
     id: cloned.id,
@@ -53,6 +54,7 @@ export const saveMotionProject = (document: MotionDocument): SavedMotionProject 
     updatedAt: cloned.metadata.updatedAt,
     sourceTemplateId: cloned.metadata.sourceTemplateId,
     document: cloned,
+    filePath,
   };
   const projects = loadMotionProjects();
   const nextProjects = [nextProject, ...projects.filter(project => project.id !== nextProject.id)];

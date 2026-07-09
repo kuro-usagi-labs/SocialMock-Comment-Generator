@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Circle, Clock3, Eye, EyeOff, GripVertical, Layers, Pause, Play, RotateCcw, Sparkles } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Circle, Clock3, Copy, Eye, EyeOff, GripVertical, Layers, Minus, Pause, Play, Plus, RotateCcw, Scissors, Sparkles, Trash2 } from 'lucide-react';
 import { BulkMessage, CommentConfig, Layer, LayerActionBlock } from '../types';
 import { getLayerActionBlocks, speedToFrames } from '../utils/motionEngine';
 
@@ -22,6 +22,12 @@ interface TimelineDockProps {
   reorderLayer: (id: string, targetIndex: number) => void;
   selectedSceneIndex: number;
   setSelectedSceneIndex: (index: number) => void;
+  /** Duplicate the selected action block */
+  duplicateAction?: (layerId: string, actionId: string) => void;
+  /** Delete the selected action block */
+  deleteAction?: (layerId: string, actionId: string) => void;
+  /** Split action at current playhead frame */
+  splitAction?: (layerId: string, actionId: string, frame: number) => void;
 }
 
 type DragMode = 'move' | 'resize-start' | 'resize-end';
@@ -93,12 +99,16 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
   reorderLayer,
   selectedSceneIndex,
   setSelectedSceneIndex,
+  duplicateAction,
+  deleteAction,
+  splitAction,
 }) => {
   const duration = Math.max(1, config.animationDuration || 2);
   const durationFrames = Math.max(60, Math.round(duration * 60));
+  const currentFrame = Math.round((progress / 100) * durationFrames);
   const markers = [0, 0.25, 0.5, 0.75, 1];
   const currentSecond = (duration * progress) / 100;
-  const orderedLayers = [...config.canvas.layers].sort((a, b) => b.zIndex - a.zIndex);
+  const orderedLayers = useMemo(() => [...config.canvas.layers].sort((a, b) => b.zIndex - a.zIndex), [config.canvas.layers]);
   const reorderableTimelineIndices = orderedLayers
     .filter(layer => layer.id !== 'layer-bg-auto')
     .map((layer, visualIndex, items) => ({
@@ -108,6 +118,63 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     }));
   const [tlDragRowId, setTlDragRowId] = useState<string | null>(null);
   const [tlDragOverIndex, setTlDragOverIndex] = useState<number | null>(null);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string; actionId: string } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener('pointerdown', handleClick);
+    return () => window.removeEventListener('pointerdown', handleClick);
+  }, [contextMenu]);
+
+  const handleActionContextMenu = useCallback((e: React.MouseEvent, layerId: string, actionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedLayerId(layerId);
+    selectAction(layerId, actionId);
+    setContextMenu({ x: e.clientX, y: e.clientY, layerId, actionId });
+  }, [setSelectedLayerId, selectAction]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Frame stepping
+      if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const nextFrame = Math.min(durationFrames, currentFrame + (e.shiftKey ? 10 : 1));
+        setProgress((nextFrame / durationFrames) * 100);
+        return;
+      }
+      if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const prevFrame = Math.max(0, currentFrame - (e.shiftKey ? 10 : 1));
+        setProgress((prevFrame / durationFrames) * 100);
+        return;
+      }
+      // Delete selected action
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLayerId && selectedActionId) {
+        e.preventDefault();
+        deleteAction?.(selectedLayerId, selectedActionId);
+        return;
+      }
+      // Duplicate selected action
+      if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && selectedLayerId && selectedActionId) {
+        e.preventDefault();
+        duplicateAction?.(selectedLayerId, selectedActionId);
+        return;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentFrame, durationFrames, selectedLayerId, selectedActionId, setProgress, deleteAction, duplicateAction]);
 
   const tlRowOnPointerDown = (layerId: string, event: React.PointerEvent, sourceVisualIndex: number) => {
     event.preventDefault();
@@ -197,6 +264,35 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     window.addEventListener('pointerup', onPointerUp, { once: true });
   };
 
+  // Snap helper — snaps to grid (every 5 frames) and to other action edges
+  const snapFrame = useCallback((frame: number, excludeActionId?: string): number => {
+    const SNAP_THRESHOLD = 3; // frames
+    let best = frame;
+    let bestDist = SNAP_THRESHOLD;
+
+    // Snap to grid (every 5 frames)
+    const gridSnap = Math.round(frame / 5) * 5;
+    const gridDist = Math.abs(frame - gridSnap);
+    if (gridDist < bestDist) { best = gridSnap; bestDist = gridDist; }
+
+    // Snap to playhead
+    const playheadDist = Math.abs(frame - currentFrame);
+    if (playheadDist < bestDist) { best = currentFrame; bestDist = playheadDist; }
+
+    // Snap to other action edges
+    for (const layer of orderedLayers) {
+      for (const a of getRawActions(layer)) {
+        if (a.id === excludeActionId) continue;
+        const startDist = Math.abs(frame - a.startFrame);
+        if (startDist < bestDist) { best = a.startFrame; bestDist = startDist; }
+        const endDist = Math.abs(frame - (a.startFrame + a.durationFrames));
+        if (endDist < bestDist) { best = a.startFrame + a.durationFrames; bestDist = endDist; }
+      }
+    }
+
+    return best;
+  }, [currentFrame, orderedLayers]);
+
   const beginActionDrag = (
     event: React.PointerEvent<HTMLElement>,
     layer: Layer,
@@ -209,6 +305,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     setSelectedLayerId(layer.id);
     selectAction(layer.id, action.id);
     setIsPlaying(false);
+    setContextMenu(null);
 
     const timeline = event.currentTarget.closest('[data-timeline-track="true"]') as HTMLElement | null;
     if (!timeline) return;
@@ -222,23 +319,25 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
     const onPointerMove = (moveEvent: PointerEvent) => {
       const deltaFrames = Math.round((moveEvent.clientX - startX) * framesPerPx);
       if (mode === 'move') {
-        commitAction(layer, action.id, {
-          startFrame: clamp(startFrame + deltaFrames, 0, durationFrames - minActionFrames),
-        });
+        const raw = clamp(startFrame + deltaFrames, 0, durationFrames - minActionFrames);
+        commitAction(layer, action.id, { startFrame: snapFrame(raw, action.id) });
         return;
       }
 
       if (mode === 'resize-start') {
-        const nextStart = clamp(startFrame + deltaFrames, 0, startFrame + startDuration - minActionFrames);
+        const rawStart = clamp(startFrame + deltaFrames, 0, startFrame + startDuration - minActionFrames);
+        const snapped = snapFrame(rawStart, action.id);
         commitAction(layer, action.id, {
-          startFrame: nextStart,
-          durationFrames: clamp(startDuration + (startFrame - nextStart), minActionFrames, durationFrames - nextStart),
+          startFrame: snapped,
+          durationFrames: clamp(startDuration + (startFrame - snapped), minActionFrames, durationFrames - snapped),
         });
         return;
       }
 
+      const rawEnd = startDuration + deltaFrames;
+      const snappedEnd = snapFrame(startFrame + rawEnd, action.id) - startFrame;
       commitAction(layer, action.id, {
-        durationFrames: clamp(startDuration + deltaFrames, minActionFrames, durationFrames - startFrame),
+        durationFrames: clamp(snappedEnd, minActionFrames, durationFrames - startFrame),
       });
     };
 
@@ -402,7 +501,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
           </div>
 
           <div
-            className="relative cursor-pointer bg-slate-50"
+            className="relative cursor-pointer bg-slate-50 overflow-x-auto overflow-y-hidden"
             data-timeline-track="true"
             onPointerDown={beginPlayheadScrub}
           >
@@ -431,6 +530,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                         key={action.id}
                         type="button"
                         onPointerDown={(event) => beginActionDrag(event, layer, { ...action, startFrame: rawStart }, 'move')}
+                        onContextMenu={(e) => handleActionContextMenu(e, layer.id, action.id)}
                         className={`group/action absolute top-1.5 flex h-7 min-w-14 items-center overflow-hidden rounded-full bg-gradient-to-r px-1 text-[10px] font-black uppercase tracking-[0.04em] shadow-sm transition ${actionTone[action.kind]} ${
                           isSelected ? 'ring-2 ring-slate-950 ring-offset-2 ring-offset-slate-50' : 'hover:shadow-md'
                         } ${layer.visible ? '' : 'opacity-40'}`}
@@ -507,8 +607,67 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
               className="w-28 accent-indigo-600"
             />
           </label>
+          <div className="flex shrink-0 items-center gap-1 ml-2">
+            <button
+              type="button"
+              onClick={() => setTimelineZoom(z => Math.max(0.5, z - 0.25))}
+              className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+              title="Zoom out timeline"
+              aria-label="Zoom out timeline"
+            >
+              <Minus size={12} />
+            </button>
+            <span className="w-10 text-center text-[10px] font-black text-slate-500">{Math.round(timelineZoom * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => setTimelineZoom(z => Math.min(4, z + 0.25))}
+              className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+              title="Zoom in timeline"
+              aria-label="Zoom in timeline"
+            >
+              <Plus size={12} />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {duplicateAction && (
+            <button
+              type="button"
+              onClick={() => { duplicateAction(contextMenu.layerId, contextMenu.actionId); setContextMenu(null); }}
+              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs font-bold text-slate-700 hover:bg-violet-50"
+            >
+              <Copy size={12} /> Duplicate
+            </button>
+          )}
+          {splitAction && (
+            <button
+              type="button"
+              onClick={() => { splitAction(contextMenu.layerId, contextMenu.actionId, currentFrame); setContextMenu(null); }}
+              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs font-bold text-slate-700 hover:bg-violet-50"
+            >
+              <Scissors size={12} /> Split at playhead
+            </button>
+          )}
+          <div className="my-1 h-px bg-slate-100" />
+          {deleteAction && (
+            <button
+              type="button"
+              onClick={() => { deleteAction(contextMenu.layerId, contextMenu.actionId); setContextMenu(null); }}
+              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

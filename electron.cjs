@@ -13,12 +13,110 @@ try {
 }
 
 let mainWindow;
+let isDirty = false;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
+// ============================================================================
+// Window state persistence (Milestone 13)
+// ============================================================================
+function getWindowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const statePath = getWindowStatePath();
+    if (!fs.existsSync(statePath)) return null;
+    return JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const bounds = mainWindow.getBounds();
+    const isMaximized = mainWindow.isMaximized();
+    fs.writeFileSync(getWindowStatePath(), JSON.stringify({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      isMaximized,
+    }), 'utf8');
+  } catch (e) {
+    // Silently fail
+  }
+}
+
+// ============================================================================
+// Recent files management
+// ============================================================================
+const MAX_RECENT_FILES = 20;
+const CURRENT_SCHEMA_VERSION = 1;
+
+function getRecentFilesPath() {
+  return path.join(app.getPath('userData'), 'recentFiles.json');
+}
+
+function loadRecentFiles() {
+  const filePath = getRecentFilesPath();
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('[FilePersistence] Could not read recent files:', e.message);
+    return [];
+  }
+}
+
+function saveRecentFiles(entries) {
+  const filePath = getRecentFilesPath();
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(entries, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[FilePersistence] Could not write recent files:', e.message);
+  }
+}
+
+function updateRecentFiles(projectId, title, filePath) {
+  const entries = loadRecentFiles().filter(e => e.id !== projectId);
+  entries.unshift({
+    id: projectId,
+    title,
+    filePath,
+    lastOpenedAt: new Date().toISOString(),
+  });
+  // Cap at max entries
+  saveRecentFiles(entries.slice(0, MAX_RECENT_FILES));
+}
+
+function removeFromRecentFiles(projectId) {
+  const entries = loadRecentFiles().filter(e => e.id !== projectId);
+  saveRecentFiles(entries);
+}
+
+// ============================================================================
+// Autosave management
+// ============================================================================
+function getAutosavePath() {
+  return path.join(app.getPath('userData'), 'autosave.socialmock');
+}
+
+function getAutosaveMetaPath() {
+  return path.join(app.getPath('userData'), 'autosave-meta.json');
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+  const savedState = loadWindowState();
+  const windowOptions = {
+    width: savedState?.width || 1280,
+    height: savedState?.height || 800,
     minWidth: 900,
     minHeight: 600,
     title: 'SocialMock - Comment Generator',
@@ -30,10 +128,83 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#f3f4f6',
-  });
+  };
 
-  // Remove default menu bar for cleaner look
-  Menu.setApplicationMenu(null);
+  // Restore position if saved
+  if (savedState?.x !== undefined && savedState?.y !== undefined) {
+    windowOptions.x = savedState.x;
+    windowOptions.y = savedState.y;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+
+  // Restore maximized state
+  if (savedState?.isMaximized) {
+    mainWindow.maximize();
+  }
+
+  // Build native File menu with project shortcuts
+  const menuTemplate = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Project',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('menu:new-project'),
+        },
+        {
+          label: 'Open...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu:open'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu:save'),
+        },
+        {
+          label: 'Save As...',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => mainWindow?.webContents.send('menu:save-as'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Export Image',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => mainWindow?.webContents.send('menu:export'),
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
 
   // Load the built React app
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
@@ -41,6 +212,36 @@ function createWindow() {
   // Show window when ready to avoid white flash
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+  });
+
+  // Window close guard — prompt to save if dirty, always save window state
+  mainWindow.on('close', async (event) => {
+    // Always save window state before close
+    saveWindowState();
+
+    if (!isDirty) return;
+
+    event.preventDefault();
+
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Save', "Don't Save", 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Unsaved Changes',
+      message: 'You have unsaved changes. Do you want to save before closing?',
+    });
+
+    if (response === 0) {
+      // Save — tell renderer to save, then close
+      mainWindow.webContents.send('project:request-save');
+      // Renderer will call project:save and then project:close-window
+    } else if (response === 1) {
+      // Don't Save
+      isDirty = false;
+      mainWindow.close();
+    }
+    // response === 2 => Cancel, do nothing
   });
 
   mainWindow.on('closed', () => {
@@ -739,6 +940,332 @@ function getElectronChromiumPath() {
     return undefined;
   }
 }
+
+// ============================================================================
+// Project File Persistence IPC handlers
+// ============================================================================
+
+ipcMain.handle('project:open', async () => {
+  if (!mainWindow) return { success: false, error: 'No main window' };
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open SocialMock Project',
+    filters: [
+      { name: 'SocialMock Files', extensions: ['socialmock'] },
+      { name: 'JSON Files', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+
+  if (canceled || !filePaths || filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const filePath = filePaths[0];
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    // Validate basic structure
+    if (!parsed || typeof parsed !== 'object') {
+      return { success: false, error: 'File is empty or not valid JSON.' };
+    }
+    if (typeof parsed.schemaVersion !== 'number') {
+      return { success: false, error: 'Missing schemaVersion field. This may not be a SocialMock file.' };
+    }
+    if (!parsed.document || typeof parsed.document !== 'object') {
+      return { success: false, error: 'Missing document data in file.' };
+    }
+    if (typeof parsed.document.id !== 'string' || !parsed.document.id) {
+      return { success: false, error: 'Document is missing a valid id.' };
+    }
+    if (!Array.isArray(parsed.document.scenes) || parsed.document.scenes.length === 0) {
+      return { success: false, error: 'Document has no scenes.' };
+    }
+
+    // Update recent files
+    updateRecentFiles(parsed.document.id, parsed.document.title, filePath);
+
+    isDirty = false;
+    return { success: true, file: parsed, filePath };
+  } catch (error) {
+    console.error('[FilePersistence] Open error:', error);
+    if (error instanceof SyntaxError) {
+      return { success: false, error: 'File is not valid JSON. It may be corrupted.' };
+    }
+    return { success: false, error: `Could not open file: ${error.message}` };
+  }
+});
+
+ipcMain.handle('project:open-path', async (event, filePath) => {
+  if (!filePath) return { success: false, error: 'No file path provided.' };
+
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found. It may have been moved or deleted.' };
+    }
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { success: false, error: 'File is empty or not valid JSON.' };
+    }
+    if (typeof parsed.schemaVersion !== 'number') {
+      return { success: false, error: 'Missing schemaVersion field. This may not be a SocialMock file.' };
+    }
+    if (!parsed.document || typeof parsed.document !== 'object') {
+      return { success: false, error: 'Missing document data in file.' };
+    }
+    if (typeof parsed.document.id !== 'string' || !parsed.document.id) {
+      return { success: false, error: 'Document is missing a valid id.' };
+    }
+    if (!Array.isArray(parsed.document.scenes) || parsed.document.scenes.length === 0) {
+      return { success: false, error: 'Document has no scenes.' };
+    }
+
+    updateRecentFiles(parsed.document.id, parsed.document.title, filePath);
+    isDirty = false;
+    return { success: true, file: parsed, filePath };
+  } catch (error) {
+    console.error('[FilePersistence] Open-path error:', error);
+    if (error instanceof SyntaxError) {
+      return { success: false, error: 'File is not valid JSON. It may be corrupted.' };
+    }
+    return { success: false, error: `Could not open file: ${error.message}` };
+  }
+});
+
+ipcMain.handle('project:save', async (event, data) => {
+  if (!mainWindow) return { success: false, error: 'No main window' };
+
+  const { filePath, file } = data;
+  if (!filePath || !file) {
+    return { success: false, error: 'Missing filePath or file data.' };
+  }
+
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(file, null, 2), 'utf8');
+
+    // Update recent files
+    if (file.document) {
+      updateRecentFiles(file.document.id, file.document.title, filePath);
+    }
+
+    isDirty = false;
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('[FilePersistence] Save error:', error);
+    return { success: false, error: `Could not save file: ${error.message}` };
+  }
+});
+
+ipcMain.handle('project:save-as', async (event, data) => {
+  if (!mainWindow) return { success: false, error: 'No main window' };
+
+  const { file } = data;
+  if (!file) {
+    return { success: false, error: 'Missing file data.' };
+  }
+
+  const defaultName = (file.document?.title || 'Untitled SocialMock')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .substring(0, 100);
+
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save SocialMock Project',
+    defaultPath: `${defaultName}.socialmock`,
+    filters: [
+      { name: 'SocialMock Files', extensions: ['socialmock'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+
+  if (canceled || !filePath) {
+    return { success: false, canceled: true };
+  }
+
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(file, null, 2), 'utf8');
+
+    // Update recent files
+    if (file.document) {
+      updateRecentFiles(file.document.id, file.document.title, filePath);
+    }
+
+    isDirty = false;
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('[FilePersistence] Save As error:', error);
+    return { success: false, error: `Could not save file: ${error.message}` };
+  }
+});
+
+ipcMain.handle('project:recent', async () => {
+  return loadRecentFiles();
+});
+
+ipcMain.handle('project:set-dirty', async (event, dirty) => {
+  isDirty = !!dirty;
+  // Update window title to show dirty indicator
+  if (mainWindow) {
+    const title = mainWindow.getTitle().replace(/ \*$/, '');
+    mainWindow.setTitle(isDirty ? `${title} *` : title);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('project:autosave', async (event, data) => {
+  try {
+    const autosavePath = getAutosavePath();
+    const metaPath = getAutosaveMetaPath();
+    fs.writeFileSync(autosavePath, JSON.stringify(data), 'utf8');
+    fs.writeFileSync(metaPath, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      documentId: data?.document?.id,
+    }), 'utf8');
+    return { success: true, path: autosavePath };
+  } catch (error) {
+    console.warn('[FilePersistence] Autosave error:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('project:check-autosave', async () => {
+  try {
+    const autosavePath = getAutosavePath();
+    const metaPath = getAutosaveMetaPath();
+    if (!fs.existsSync(autosavePath) || !fs.existsSync(metaPath)) {
+      return { hasAutosave: false };
+    }
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    return {
+      hasAutosave: true,
+      savedAt: meta.savedAt,
+      documentId: meta.documentId,
+    };
+  } catch (error) {
+    return { hasAutosave: false };
+  }
+});
+
+ipcMain.handle('project:load-autosave', async () => {
+  try {
+    const autosavePath = getAutosavePath();
+    if (!fs.existsSync(autosavePath)) {
+      return { success: false, error: 'No autosave file found.' };
+    }
+    const raw = fs.readFileSync(autosavePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return { success: true, file: parsed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('project:clear-autosave', async () => {
+  try {
+    const autosavePath = getAutosavePath();
+    const metaPath = getAutosaveMetaPath();
+    if (fs.existsSync(autosavePath)) fs.unlinkSync(autosavePath);
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('project:close-window', async () => {
+  if (mainWindow) {
+    isDirty = false;
+    mainWindow.close();
+  }
+});
+
+// ============================================================================
+// Asset Manager IPC handlers (Milestone 7)
+// ============================================================================
+
+ipcMain.handle('asset:import-file', async () => {
+  if (!mainWindow) return { success: false, error: 'No main window' };
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import Asset',
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'] },
+      { name: 'Videos', extensions: ['mp4', 'webm', 'mov'] },
+      { name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile', 'multiSelections'],
+  });
+
+  if (canceled || !filePaths || filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  try {
+    const results = [];
+    for (const filePath of filePaths) {
+      const stat = fs.statSync(filePath);
+      const fileName = path.basename(filePath);
+      const ext = path.extname(fileName).toLowerCase().replace('.', '');
+      const mimeTypeMap = {
+        'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+        'webp': 'image/webp', 'svg': 'image/svg+xml', 'gif': 'image/gif',
+        'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+        'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+      };
+      const mimeType = mimeTypeMap[ext] || 'application/octet-stream';
+      const base64 = fs.readFileSync(filePath, 'base64');
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+
+      let assetType = 'image';
+      if (mimeType.startsWith('video/')) assetType = 'video';
+      else if (mimeType.startsWith('audio/')) assetType = 'audio';
+
+      results.push({
+        id: `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: fileName.replace(/\.[^/.]+$/, ''),
+        type: assetType,
+        mimeType,
+        fileName,
+        src: dataUrl,
+        size: stat.size,
+        addedAt: new Date().toISOString(),
+      });
+    }
+
+    return { success: true, assets: results };
+  } catch (error) {
+    console.error('[Asset] Import error:', error);
+    return { success: false, error: `Could not import asset: ${error.message}` };
+  }
+});
+
+ipcMain.handle('asset:read-file-as-data-url', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found.' };
+    }
+    const ext = path.extname(filePath).toLowerCase().replace('.', '');
+    const mimeTypeMap = {
+      'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+      'webp': 'image/webp', 'svg': 'image/svg+xml', 'gif': 'image/gif',
+      'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+      'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+    };
+    const mimeType = mimeTypeMap[ext] || 'application/octet-stream';
+    const base64 = fs.readFileSync(filePath, 'base64');
+    return { success: true, dataUrl: `data:${mimeType};base64,${base64}`, mimeType };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 // ============================================================================
 // Legacy IPC handlers (kept for backward compatibility during transition)

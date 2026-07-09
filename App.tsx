@@ -35,6 +35,7 @@ import { syncBackgroundLayerFromConfig } from './utils/backgroundLayer';
 import { MotionTemplate, createDocumentFromTemplate } from './utils/templateLibrary';
 import { SavedMotionProject, deleteMotionProject, duplicateMotionProject, loadMotionProjects, saveMotionProject } from './utils/projectStore';
 import { createActionSelection, createCanvasSelection, createLayerSelection, getPrimaryActionId, getPrimaryLayerId } from './utils/selection';
+import { wrapDocumentForSave, unwrapLoadedFile } from './utils/fileIO';
 
 const platformOptions: Array<{
   value: Platform;
@@ -159,6 +160,11 @@ const App: React.FC = () => {
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const [resizingLayerId, setResizingLayerId] = useState<string | null>(null);
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [recentFiles, setRecentFiles] = useState<Array<{ id: string; title: string; filePath: string; lastOpenedAt: string }>>([]);
+  const isDirtyRef = useRef(isDirty);
+  const currentFilePathRef = useRef(currentFilePath);
   const motionDocumentRef = useRef(motionDocument);
   const selectionRef = useRef(selection);
   const selectedSceneIndexRef = useRef(selectedSceneIndex);
@@ -185,6 +191,14 @@ const App: React.FC = () => {
   useEffect(() => {
     selectedSceneIndexRef.current = selectedSceneIndex;
   }, [selectedSceneIndex]);
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  useEffect(() => {
+    currentFilePathRef.current = currentFilePath;
+  }, [currentFilePath]);
   
   const waitForPreviewPaint = () => new Promise<void>(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -368,6 +382,8 @@ const App: React.FC = () => {
     });
     saveMotionProject(document);
     replaceMotionDocument(document);
+    setCurrentFilePath(null);
+    setIsDirty(false);
     setSavedProjects(loadMotionProjects());
     resetEditorRuntime();
     setWorkspaceView('editor');
@@ -377,6 +393,8 @@ const App: React.FC = () => {
     const document = createDocumentFromTemplate(template);
     saveMotionProject(document);
     replaceMotionDocument(document);
+    setCurrentFilePath(null);
+    setIsDirty(false);
     setSavedProjects(loadMotionProjects());
     resetEditorRuntime();
     setWorkspaceView('editor');
@@ -408,6 +426,91 @@ const App: React.FC = () => {
       }));
     }
   }, [motionDocument.id, replaceMotionDocument]);
+
+  // ── File persistence handlers ──────────────────────────────────────────
+  const refreshRecentFiles = useCallback(async () => {
+    if (!window.electronAPI?.projectGetRecent) return;
+    const files = await window.electronAPI.projectGetRecent();
+    if (Array.isArray(files)) setRecentFiles(files);
+  }, []);
+
+  const handleSaveProject = useCallback(async () => {
+    if (!window.electronAPI?.projectSave) {
+      toast.error('File save is only supported in the desktop app.');
+      return;
+    }
+    if (currentFilePathRef.current) {
+      const result = await window.electronAPI.projectSave({
+        filePath: currentFilePathRef.current,
+        file: wrapDocumentForSave(motionDocumentRef.current),
+      });
+      if (result.success) {
+        setIsDirty(false);
+        await refreshRecentFiles();
+        toast.success('Project saved');
+      } else if (!result.canceled) {
+        toast.error(result.error || 'Failed to save project');
+      }
+    } else {
+      // No file path yet, fall through to Save As
+      await handleSaveAsProject();
+    }
+  }, [refreshRecentFiles]);
+
+  const handleSaveAsProject = useCallback(async () => {
+    if (!window.electronAPI?.projectSaveAs) {
+      toast.error('File save is only supported in the desktop app.');
+      return;
+    }
+    const result = await window.electronAPI.projectSaveAs({
+      file: wrapDocumentForSave(motionDocumentRef.current),
+    });
+    if (result.success && result.filePath) {
+      setCurrentFilePath(result.filePath);
+      setIsDirty(false);
+      await refreshRecentFiles();
+      toast.success('Project saved');
+    } else if (!result.canceled) {
+      toast.error(result.error || 'Failed to save project');
+    }
+  }, [refreshRecentFiles]);
+
+  // Shared helper: apply a successfully opened file result to state
+  const applyOpenedFile = useCallback(async (result: { success: boolean; file?: any; filePath?: string; canceled?: boolean; error?: string }) => {
+    if (result.success && result.file && result.filePath) {
+      const unwrapped = unwrapLoadedFile(result.file);
+      if (unwrapped.valid && unwrapped.document) {
+        setCurrentFilePath(result.filePath);
+        replaceMotionDocument(unwrapped.document);
+        resetEditorRuntime();
+        setWorkspaceView('editor');
+        setIsDirty(false);
+        await refreshRecentFiles();
+        toast.success(`Opened: ${unwrapped.document.title}`);
+      } else {
+        toast.error(unwrapped.error || 'Invalid project file');
+      }
+    } else if (!result.canceled) {
+      toast.error(result.error || 'Failed to open file');
+    }
+  }, [replaceMotionDocument, resetEditorRuntime, refreshRecentFiles]);
+
+  const handleOpenProjectFile = useCallback(async () => {
+    if (!window.electronAPI?.projectOpen) {
+      toast.error('File open is only supported in the desktop app.');
+      return;
+    }
+    await applyOpenedFile(await window.electronAPI.projectOpen());
+  }, [applyOpenedFile]);
+
+  const handleOpenRecentFile = useCallback(async (filePath: string) => {
+    if (!window.electronAPI?.projectOpenPath) {
+      toast.error('File open is only supported in the desktop app.');
+      return;
+    }
+    await applyOpenedFile(await window.electronAPI.projectOpenPath(filePath));
+  }, [applyOpenedFile]);
+
 
   const handleReset = useCallback(() => {
     if (window.confirm('Reset all changes?')) {
@@ -446,6 +549,31 @@ const App: React.FC = () => {
       setIsExporting(false);
     }
   }, [config.platform]);
+
+  // Listen for native menu actions from Electron
+  useEffect(() => {
+    if (!window.electronAPI?.onMenuAction) return;
+    const cleanup = window.electronAPI.onMenuAction((action: string) => {
+      switch (action) {
+        case 'menu:new-project':
+          handleCreateBlankProject();
+          break;
+        case 'menu:open':
+          handleOpenProjectFile();
+          break;
+        case 'menu:save':
+          handleSaveProject();
+          break;
+        case 'menu:save-as':
+          handleSaveAsProject();
+          break;
+        case 'menu:export':
+          handleExport();
+          break;
+      }
+    });
+    return cleanup;
+  }, [handleCreateBlankProject, handleOpenProjectFile, handleSaveProject, handleSaveAsProject, handleExport]);
 
   const handleCopy = useCallback(async () => {
     if (previewRef.current === null) return;
@@ -953,10 +1081,84 @@ const App: React.FC = () => {
     return cleanup;
   }, []);
 
+  // Auto-save to localStorage (backup) and mark dirty
   useEffect(() => {
-    saveMotionProject(motionDocument);
-    setSavedProjects(loadMotionProjects());
+    const saved = saveMotionProject(motionDocument);
+    setSavedProjects(prev => {
+      // Merge the saved project into the list without a full re-read
+      const filtered = prev.filter(p => p.id !== saved.id);
+      return [saved, ...filtered].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    });
+    setIsDirty(true);
   }, [motionDocument]);
+
+  // Sync dirty state to Electron main process
+  useEffect(() => {
+    window.electronAPI?.projectSetDirty(isDirty);
+  }, [isDirty]);
+
+  // Autosave to file every 30 seconds if dirty (Electron only)
+  useEffect(() => {
+    if (!window.electronAPI?.projectAutosave) return;
+    const interval = setInterval(() => {
+      if (isDirtyRef.current) {
+        window.electronAPI?.projectAutosave(wrapDocumentForSave(motionDocumentRef.current));
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load recent files on mount
+  useEffect(() => {
+    if (!window.electronAPI?.projectGetRecent) return;
+    window.electronAPI.projectGetRecent().then(files => {
+      if (Array.isArray(files)) setRecentFiles(files);
+    });
+  }, []);
+
+  // Check for autosave recovery on mount
+  useEffect(() => {
+    if (!window.electronAPI?.projectCheckAutosave) return;
+    window.electronAPI.projectCheckAutosave().then(async (result) => {
+      if (!result.hasAutosave) return;
+      const shouldRecover = window.confirm(
+        `An autosave from ${new Date(result.savedAt || '').toLocaleString()} was found. Restore it?`
+      );
+      if (shouldRecover) {
+        const loadResult = await window.electronAPI.projectLoadAutosave();
+        if (loadResult.success && loadResult.file) {
+          const unwrapped = unwrapLoadedFile(loadResult.file);
+          if (unwrapped.valid && unwrapped.document) {
+            replaceMotionDocument(unwrapped.document);
+            resetEditorRuntime();
+            setWorkspaceView('editor');
+            toast.success('Autosave restored');
+          }
+        }
+        await window.electronAPI.projectClearAutosave();
+      }
+    });
+  }, []);
+
+  // Listen for main process request to save (window close guard)
+  useEffect(() => {
+    if (!window.electronAPI?.onRequestSave) return;
+    const cleanup = window.electronAPI.onRequestSave(async () => {
+      // Save current state to localStorage
+      saveMotionProject(motionDocumentRef.current);
+      // If we have a file path, save to file too
+      if (currentFilePathRef.current) {
+        await window.electronAPI?.projectSave({
+          filePath: currentFilePathRef.current,
+          file: wrapDocumentForSave(motionDocumentRef.current),
+        });
+      }
+      setIsDirty(false);
+      // Close window after save
+      setTimeout(() => window.electronAPI?.projectCloseWindow(), 100);
+    });
+    return cleanup;
+  }, []);
 
   useEffect(() => {
     setSelectedSceneIndex(index => Math.min(index, config.bulkMessages.length));
@@ -1049,6 +1251,80 @@ const App: React.FC = () => {
     updateBulkMessage(safeSelectedSceneIndex - 1, patch);
   }, [safeSelectedSceneIndex, updateBulkMessage]);
 
+  const duplicateAction = useCallback((layerId: string, actionId: string) => {
+    const activeScene = motionDocument.scenes.find(s => s.id === motionDocument.activeSceneId) ?? motionDocument.scenes[0];
+    const layer = activeScene.config.canvas.layers.find(l => l.id === layerId);
+    const action = layer?.actionBlocks?.find(a => a.id === actionId);
+    if (!action) return;
+    const newAction = {
+      ...action,
+      id: `${actionId}-copy-${Date.now()}`,
+      name: `${action.name} Copy`,
+      startFrame: Math.min(action.startFrame + action.durationFrames + 2, 110),
+    };
+    commitMotionDocument(prev => updateActiveSceneConfig(prev, cfg => ({
+      ...cfg,
+      canvas: {
+        ...cfg.canvas,
+        layers: cfg.canvas.layers.map(l =>
+          l.id === layerId ? { ...l, actionBlocks: [...(l.actionBlocks ?? []), newAction] } : l
+        ),
+      },
+    })), { label: `Duplicate action: ${action.name}` });
+    selectAction(layerId, newAction.id);
+  }, [motionDocument, commitMotionDocument, selectAction]);
+
+  const deleteAction = useCallback((layerId: string, actionId: string) => {
+    commitMotionDocument(prev => updateActiveSceneConfig(prev, cfg => ({
+      ...cfg,
+      canvas: {
+        ...cfg.canvas,
+        layers: cfg.canvas.layers.map(l =>
+          l.id === layerId
+            ? { ...l, actionBlocks: (l.actionBlocks ?? []).filter(a => a.id !== actionId) }
+            : l
+        ),
+      },
+    })), { label: 'Delete action' });
+  }, [commitMotionDocument]);
+
+  const splitAction = useCallback((layerId: string, actionId: string, frame: number) => {
+    const activeScene = motionDocument.scenes.find(s => s.id === motionDocument.activeSceneId) ?? motionDocument.scenes[0];
+    const layer = activeScene.config.canvas.layers.find(l => l.id === layerId);
+    const action = layer?.actionBlocks?.find(a => a.id === actionId);
+    if (!action) return;
+    // Only split if playhead is within the action range
+    if (frame <= action.startFrame || frame >= action.startFrame + action.durationFrames) return;
+    const splitPoint = frame - action.startFrame;
+    const secondAction = {
+      ...action,
+      id: `${actionId}-split-${Date.now()}`,
+      name: `${action.name} (2)`,
+      startFrame: frame,
+      durationFrames: action.durationFrames - splitPoint,
+    };
+    commitMotionDocument(prev => updateActiveSceneConfig(prev, cfg => ({
+      ...cfg,
+      canvas: {
+        ...cfg.canvas,
+        layers: cfg.canvas.layers.map(l =>
+          l.id === layerId
+            ? {
+                ...l,
+                actionBlocks: (l.actionBlocks ?? []).flatMap(a => {
+                  if (a.id !== actionId) return [a];
+                  return [
+                    { ...a, durationFrames: splitPoint },
+                    secondAction,
+                  ];
+                }),
+              }
+            : l
+        ),
+      },
+    })), { label: 'Split action' });
+  }, [motionDocument, commitMotionDocument]);
+
   if (workspaceView === 'home') {
     return (
       <>
@@ -1056,9 +1332,12 @@ const App: React.FC = () => {
         <HomeDashboard
           currentDocument={motionDocument}
           projects={savedProjects}
+          recentFiles={recentFiles}
           onCreateBlank={handleCreateBlankProject}
           onOpenDraft={() => setWorkspaceView('editor')}
           onOpenProject={handleOpenProject}
+          onOpenProjectFile={handleOpenProjectFile}
+          onOpenRecentFile={handleOpenRecentFile}
           onDuplicateProject={handleDuplicateProject}
           onDeleteProject={handleDeleteProject}
           onUseTemplate={handleUseTemplate}
@@ -1363,6 +1642,9 @@ const App: React.FC = () => {
           reorderLayer={reorderLayer}
           selectedSceneIndex={safeSelectedSceneIndex}
           setSelectedSceneIndex={setSelectedSceneIndex}
+          duplicateAction={duplicateAction}
+          deleteAction={deleteAction}
+          splitAction={splitAction}
         />
 
         {isExportingBulk && bulkExportIndex >= 0 && (

@@ -1,12 +1,17 @@
 import React from 'react';
 import {
+  BarChart3,
   CopyPlus,
   FilePlus2,
   Folder,
+  FolderOpen,
+  Globe,
   Image as ImageIcon,
   Layers,
+  LayoutGrid,
   Megaphone,
   MessageSquare,
+  Monitor,
   Plus,
   Search,
   Sparkles,
@@ -19,12 +24,22 @@ import { MotionDocument } from '../types';
 import { SavedMotionProject } from '../utils/projectStore';
 import { MotionTemplate, TemplateCategory, motionTemplates, templateCategories } from '../utils/templateLibrary';
 
+interface RecentFileEntry {
+  id: string;
+  title: string;
+  filePath: string;
+  lastOpenedAt: string;
+}
+
 interface HomeDashboardProps {
   currentDocument: MotionDocument;
   projects: SavedMotionProject[];
+  recentFiles?: RecentFileEntry[];
   onCreateBlank: () => void;
   onOpenDraft: () => void;
   onOpenProject: (project: SavedMotionProject) => void;
+  onOpenProjectFile?: () => void;
+  onOpenRecentFile?: (filePath: string) => void;
   onDuplicateProject: (project: SavedMotionProject) => void;
   onDeleteProject: (project: SavedMotionProject) => void;
   onUseTemplate: (template: MotionTemplate) => void;
@@ -39,6 +54,11 @@ const categoryIcons: Record<TemplateCategory, React.ReactNode> = {
   ads: <Megaphone size={17} />,
   branding: <Star size={17} />,
   backgrounds: <ImageIcon size={17} />,
+  devices: <Monitor size={17} />,
+  logos: <Sparkles size={17} />,
+  websites: <Globe size={17} />,
+  ui: <LayoutGrid size={17} />,
+  charts: <BarChart3 size={17} />,
 };
 
 const formatEditedAt = (value: string) => {
@@ -115,9 +135,12 @@ const TemplatePreview: React.FC<{ template: MotionTemplate }> = ({ template }) =
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   currentDocument,
   projects,
+  recentFiles = [],
   onCreateBlank,
   onOpenDraft,
   onOpenProject,
+  onOpenProjectFile,
+  onOpenRecentFile,
   onDuplicateProject,
   onDeleteProject,
   onUseTemplate,
@@ -234,7 +257,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           {activeTab === 'drafts' ? (
             <>
               <h1 className="mb-14 font-display text-7xl font-black tracking-tight">Drafts</h1>
-              <div className="mb-10 grid grid-cols-2 gap-5">
+              <div className="mb-10 grid grid-cols-3 gap-5">
                 <button
                   type="button"
                   onClick={onCreateBlank}
@@ -251,7 +274,44 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <Layers size={21} />
                   Start from template
                 </button>
+                {onOpenProjectFile && (
+                  <button
+                    type="button"
+                    onClick={onOpenProjectFile}
+                    className="flex h-[60px] items-center justify-center gap-3 border-2 border-slate-200 bg-white text-lg font-black text-slate-700 transition hover:border-violet-400 hover:text-violet-600"
+                  >
+                    <FolderOpen size={21} />
+                    Open file
+                  </button>
+                )}
               </div>
+
+              {recentFiles.length > 0 && (
+                <div className="mb-10">
+                  <h2 className="mb-4 text-sm font-black uppercase tracking-wider text-slate-400">Recent files</h2>
+                  <div className="space-y-2">
+                    {recentFiles.slice(0, 8).map(entry => (
+                      <button
+                        key={entry.filePath}
+                        type="button"
+                        onClick={() => onOpenRecentFile?.(entry.filePath)}
+                        className="group flex w-full items-center gap-4 rounded-md px-4 py-3 text-left transition hover:bg-violet-50"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">
+                          <Folder size={16} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-black text-slate-900">{entry.title}</p>
+                          <p className="truncate text-xs font-bold text-slate-400">{entry.filePath}</p>
+                        </div>
+                        <span className="shrink-0 text-xs font-bold text-slate-400">
+                          {new Date(entry.lastOpenedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-x-5 gap-y-8">
                 {(projects.length > 0 ? projects : [{

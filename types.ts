@@ -208,6 +208,43 @@ export interface MotionScene {
   config: CommentConfig;
 }
 
+// ---------------------------------------------------------------
+// Schema v2 — Export presets, assets, timeline settings
+// ---------------------------------------------------------------
+export type ExportPreset = 'square-1080' | 'story-1080x1920' | 'landscape-1920x1080' | 'custom';
+
+export interface ExportSettings {
+  format: VideoExportFormat;
+  transparentBackground: boolean;
+  fps: number;
+  preset: ExportPreset;
+  width: number;
+  height: number;
+  quality: number; // 0..100
+}
+
+export interface MotionAsset {
+  id: string;
+  name: string;
+  type: 'image' | 'video' | 'audio';
+  mimeType: string;
+  fileName: string;
+  /** Relative path within project folder, or data URL for inline */
+  src: string;
+  width?: number;
+  height?: number;
+  /** Duration in seconds — for video/audio only */
+  duration?: number;
+  addedAt: string;
+}
+
+export interface TimelineSettings {
+  scrollX: number;
+  zoomX: number;
+  /** Currently visible frame range */
+  visibleRange: { start: number; end: number };
+}
+
 export interface MotionDocumentMetadata {
   createdAt: string;
   updatedAt: string;
@@ -225,14 +262,41 @@ export interface MotionDocumentSettings {
   };
 }
 
+export const CURRENT_DOCUMENT_SCHEMA = 2;
+
 export interface MotionDocument {
   id: string;
   title: string;
-  version: number;
+  /** Document schema version — used by migration pipeline */
+  schemaVersion: number;
   metadata: MotionDocumentMetadata;
   settings: MotionDocumentSettings;
+  /** Extracted export settings (preferred over settings.export) */
+  exportSettings: ExportSettings;
+  /** Project asset registry */
+  assets: MotionAsset[];
+  /** Timeline view state */
+  timeline: TimelineSettings;
   activeSceneId: string;
   scenes: MotionScene[];
+}
+
+// ---------------------------------------------------------------
+// File Persistence — .socialmock file format
+// ---------------------------------------------------------------
+/** File envelope schema version (independent of document schema) */
+export const CURRENT_SCHEMA_VERSION = 1;
+
+export interface SocialMockFileMeta {
+  savedAt: string;
+  appVersion: string;
+  platform: string;
+}
+
+export interface SocialMockFile {
+  schemaVersion: number;
+  document: MotionDocument;
+  _meta: SocialMockFileMeta;
 }
 
 export type EditorSelectionType = 'canvas' | 'scene' | 'layer' | 'action';

@@ -8,7 +8,12 @@ export type TemplateCategory =
   | 'text'
   | 'ads'
   | 'branding'
-  | 'backgrounds';
+  | 'backgrounds'
+  | 'devices'
+  | 'logos'
+  | 'websites'
+  | 'ui'
+  | 'charts';
 
 export interface TemplatePreviewStyle {
   background: string;
@@ -55,6 +60,11 @@ export const templateCategories: Array<{ id: TemplateCategory; label: string }> 
   { id: 'ads', label: 'Ads' },
   { id: 'branding', label: 'Branding' },
   { id: 'backgrounds', label: 'Backgrounds' },
+  { id: 'devices', label: 'Devices' },
+  { id: 'logos', label: 'Logos' },
+  { id: 'websites', label: 'Websites' },
+  { id: 'ui', label: 'UI elements' },
+  { id: 'charts', label: 'Charts' },
 ];
 
 export const motionTemplates: MotionTemplate[] = [
@@ -258,6 +268,223 @@ export const motionTemplates: MotionTemplate[] = [
         textColor: '#0f172a',
         textSize: 76,
         textWeight: 'black',
+      });
+    }),
+  },
+  {
+    id: 'instagram-story-reply',
+    title: 'Instagram Story Reply',
+    description: 'Instagram story-style reply with gradient background and bold text.',
+    category: 'social',
+    badge: 'popular',
+    preview: {
+      background: 'linear-gradient(135deg, #e4405f, #fcaf17)',
+      accent: '#ffffff',
+      foreground: '#ffffff',
+      label: 'OMG yes!',
+      layout: 'chat',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'instagram';
+      config.theme = 'light';
+      config.backgroundType = 'gradient';
+      config.backgroundColor = 'linear-gradient(135deg, #e4405f, #fcaf17)';
+      config.displayName = 'Sarah';
+      config.username = '@sarahdesigns';
+      config.avatarInitials = 'SA';
+      config.avatarColor = '#e4405f';
+      config.content = 'OMG yes! This is exactly what I was looking for 🙌';
+      config.likes = '12.4K';
+      config.replies = '892';
+      config.animationInStyle = 'slide-up';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { x: 80, y: 280, width: 920, height: 400 });
+      patchLayer(config, 'layer-overlay-auto', {
+        text: 'Trending reply',
+        y: 800,
+        textColor: '#ffffff',
+        textSize: 36,
+      });
+    }),
+  },
+  {
+    id: 'tiktok-viral-comment',
+    title: 'TikTok Viral Comment',
+    description: 'Dark mode TikTok comment with neon accent and bounce motion.',
+    category: 'social',
+    preview: {
+      background: '#0f0f0f',
+      accent: '#00f2ea',
+      foreground: '#ffffff',
+      label: 'This is fire 🔥',
+      layout: 'card',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'tiktok';
+      config.theme = 'dark';
+      config.backgroundType = 'solid';
+      config.backgroundColor = '#0f0f0f';
+      config.displayName = 'Creator';
+      config.username = '@viralcreator';
+      config.avatarInitials = 'VC';
+      config.avatarColor = '#00f2ea';
+      config.content = 'This is fire 🔥 Tutorial coming soon!';
+      config.likes = '45.2K';
+      config.replies = '2.1K';
+      config.animationInStyle = 'bounce-in';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { x: 60, y: 180, width: 960, height: 480 });
+      patchLayer(config, 'layer-overlay-auto', {
+        text: 'Viral moment',
+        y: 780,
+        textColor: '#00f2ea',
+        textSize: 44,
+        textWeight: 'black',
+      });
+    }),
+  },
+  {
+    id: 'neon-glow-text',
+    title: 'Neon Glow Text',
+    description: 'Glowing neon text effect on dark background with flicker animation.',
+    category: 'text',
+    badge: 'new',
+    preview: {
+      background: '#0a0a0a',
+      accent: '#a855f7',
+      foreground: '#a855f7',
+      label: 'NEON',
+      layout: 'headline',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'text';
+      config.backgroundType = 'solid';
+      config.backgroundColor = '#0a0a0a';
+      config.content = 'NEON LIGHTS';
+      config.displayName = 'NEON LIGHTS';
+      config.textColor = '#a855f7';
+      config.textStrokeColor = '#7c3aed';
+      config.textStrokeWidth = 2;
+      config.textShadow = true;
+      config.animationInStyle = 'elastic-spin';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { visible: false });
+      patchLayer(config, 'layer-overlay-auto', {
+        x: 80,
+        y: 340,
+        width: 920,
+        height: 200,
+        text: 'NEON LIGHTS',
+        textColor: '#a855f7',
+        textSize: 96,
+        textWeight: 'black',
+        textShadow: true,
+      });
+    }),
+  },
+  {
+    id: 'ad-cta-reveal',
+    title: 'Ad CTA Reveal',
+    description: 'Call-to-action reveal for ads with strong contrast and slide motion.',
+    category: 'ads',
+    preview: {
+      background: 'linear-gradient(135deg, #dc2626, #f97316)',
+      accent: '#ffffff',
+      foreground: '#ffffff',
+      label: '50% OFF',
+      layout: 'poster',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'text';
+      config.backgroundType = 'gradient';
+      config.backgroundColor = 'linear-gradient(135deg, #dc2626, #f97316)';
+      config.content = 'LIMITED OFFER';
+      config.displayName = 'LIMITED OFFER';
+      config.textColor = '#ffffff';
+      config.textShadow = true;
+      config.animationInStyle = 'swipe-in';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { visible: false });
+      patchLayer(config, 'layer-overlay-auto', {
+        x: 100,
+        y: 300,
+        width: 880,
+        height: 240,
+        text: 'LIMITED OFFER',
+        textColor: '#ffffff',
+        textSize: 80,
+        textWeight: 'black',
+      });
+    }),
+  },
+  {
+    id: 'device-mockup-frame',
+    title: 'Device Mockup Frame',
+    description: 'Dark device frame mockup with card content and smooth entry.',
+    category: 'devices',
+    preview: {
+      background: '#1e1b4b',
+      accent: '#818cf8',
+      foreground: '#ffffff',
+      label: 'App Preview',
+      layout: 'poster',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'twitter';
+      config.theme = 'dark';
+      config.backgroundType = 'solid';
+      config.backgroundColor = '#1e1b4b';
+      config.displayName = 'App Name';
+      config.username = '@appname';
+      config.avatarInitials = 'AN';
+      config.avatarColor = '#818cf8';
+      config.content = 'Check out our new feature — now live for all users.';
+      config.likes = '3.2K';
+      config.replies = '156';
+      config.animationInStyle = 'flip-in';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { x: 140, y: 200, width: 800, height: 500 });
+      patchLayer(config, 'layer-overlay-auto', {
+        text: 'App Preview',
+        y: 820,
+        textColor: '#818cf8',
+        textSize: 40,
+      });
+    }),
+  },
+  {
+    id: 'minimal-logo-reveal',
+    title: 'Minimal Logo Reveal',
+    description: 'Clean minimal logo reveal with fade-scale motion on white background.',
+    category: 'logos',
+    preview: {
+      background: '#ffffff',
+      accent: '#111827',
+      foreground: '#111827',
+      label: 'Brand',
+      layout: 'loop',
+    },
+    createConfig: () => configure(config => {
+      config.platform = 'text';
+      config.backgroundType = 'solid';
+      config.backgroundColor = '#ffffff';
+      config.content = 'BRAND';
+      config.displayName = 'BRAND';
+      config.textColor = '#111827';
+      config.textShadow = false;
+      config.animationInStyle = 'fade-scale';
+      config.animationOutStyle = 'fade-scale';
+      patchLayer(config, 'layer-card-auto', { visible: false });
+      patchLayer(config, 'layer-overlay-auto', {
+        x: 200,
+        y: 360,
+        width: 680,
+        height: 160,
+        text: 'BRAND',
+        textColor: '#111827',
+        textSize: 100,
+        textWeight: 'black',
+        textShadow: false,
       });
     }),
   },
