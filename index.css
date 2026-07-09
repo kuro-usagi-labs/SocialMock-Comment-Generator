@@ -43,6 +43,10 @@ body {
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Editor view locks scroll; dashboard is scrollable */
+body.editor-active {
   overflow: hidden;
 }
 

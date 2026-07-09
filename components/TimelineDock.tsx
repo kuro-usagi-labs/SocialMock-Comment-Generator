@@ -437,8 +437,8 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
           </div>
         </div>
 
-        <div className="grid h-[160px] grid-cols-[164px_minmax(0,1fr)] overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
-          <div className="border-r border-slate-200 bg-white/80">
+        <div className="grid h-[160px] grid-cols-[164px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+          <div className="border-r border-slate-800 bg-slate-900">
             {orderedLayers.map(layer => {
               const isBg = layer.id === 'layer-bg-auto';
               const ri = reorderableTimelineIndices.find(item => item.id === layer.id);
@@ -454,8 +454,8 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                   <div
                     id={`tl-layer-row-${layer.id}`}
                     className={`flex h-10 w-full items-center gap-1.5 pl-2 pr-2 text-left transition ${
-                      selectedLayerId === layer.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-                    } ${isDragging ? 'opacity-60 scale-[1.04] shadow-lg bg-white' : ''}`}
+                      selectedLayerId === layer.id ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                    } ${isDragging ? 'opacity-60 scale-[1.04] shadow-lg bg-slate-800' : ''}`}
                   >
                     {!isBg && (
                       <div
@@ -476,10 +476,10 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                       onClick={() => setSelectedLayerId(layer.id)}
                       className="min-w-0 flex-1 text-left flex items-center gap-2"
                     >
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${layer.visible ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                      <span className="truncate text-xs font-black">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${layer.visible ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                      <span className="truncate text-xs font-black text-slate-200">
                         {layerLabel(layer, config.platform)}
-                        {isBg && <span className="ml-1 text-[9px] font-bold text-slate-400">(locked)</span>}
+                        {isBg && <span className="ml-1 text-[9px] font-bold text-slate-500">(locked)</span>}
                       </span>
                     </button>
                     <span
@@ -487,7 +487,7 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
                         event.stopPropagation();
                         updateLayer(layer.id, { visible: !layer.visible } as Partial<Layer>);
                       }}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-700 hover:text-white"
                       role="button"
                       tabIndex={0}
                       aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
@@ -501,15 +501,15 @@ const TimelineDockComponent: React.FC<TimelineDockProps> = ({
           </div>
 
           <div
-            className="relative cursor-pointer bg-slate-50 overflow-x-auto overflow-y-hidden"
+            className="relative cursor-pointer bg-slate-950 overflow-x-auto overflow-y-hidden"
             data-timeline-track="true"
             onPointerDown={beginPlayheadScrub}
           >
-            <div className="pointer-events-none absolute inset-x-3 top-0 z-0 h-full rounded-xl border-x border-slate-200/70 bg-white/45" />
+            <div className="pointer-events-none absolute inset-x-3 top-0 z-0 h-full rounded-xl border-x border-slate-800/70 bg-slate-900/45" />
             <div className="pointer-events-none absolute inset-x-3 top-0 z-0 flex h-full justify-between">
               {markers.map(marker => (
-                <span key={marker} className="relative h-full w-px bg-slate-200">
-                  <span className="absolute left-1 top-1 text-[10px] font-black text-slate-300">{(marker * duration).toFixed(marker === 0 ? 0 : 1)}s</span>
+                <span key={marker} className="relative h-full w-px bg-slate-700">
+                  <span className="absolute left-1 top-1 text-[10px] font-black text-slate-500">{(marker * duration).toFixed(marker === 0 ? 0 : 1)}s</span>
                 </span>
               ))}
             </div>

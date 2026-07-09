@@ -72,47 +72,47 @@ const TemplatePreview: React.FC<{ template: MotionTemplate }> = ({ template }) =
 
   return (
     <div
-      className="relative flex aspect-[1.48] w-full items-center justify-center overflow-hidden rounded-md border border-slate-100"
+      className="relative flex aspect-[1.48] w-full items-center justify-center overflow-hidden rounded-xl"
       style={{ background: preview.background }}
     >
       {template.badge && (
-        <span className="absolute right-3 top-3 rounded-sm bg-violet-600 px-2 py-1 text-[10px] font-black uppercase text-white">
+        <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-900 shadow-sm backdrop-blur-sm">
           {template.badge}
         </span>
       )}
 
       {preview.layout === 'card' && (
-        <div className="w-[72%] rounded-md bg-white p-4 shadow-xl">
+        <div className="w-[72%] rounded-lg bg-white/95 p-4 shadow-2xl shadow-black/10 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <span className="h-10 w-10 rounded-full" style={{ backgroundColor: preview.accent }} />
+            <span className="h-10 w-10 rounded-full shadow-inner" style={{ backgroundColor: preview.accent }} />
             <div className="min-w-0 flex-1">
               <div className="h-3 w-28 rounded-full bg-slate-900/80" />
               <div className="mt-2 h-2 w-20 rounded-full bg-slate-200" />
             </div>
           </div>
-          <div className="mt-4 h-3 w-full rounded-full bg-slate-200" />
-          <div className="mt-2 h-3 w-[68%] rounded-full bg-slate-200" />
+          <div className="mt-4 h-3 w-full rounded-full bg-slate-200/80" />
+          <div className="mt-2 h-3 w-[68%] rounded-full bg-slate-200/80" />
         </div>
       )}
 
       {preview.layout === 'headline' && (
-        <div className="px-8 text-center font-display text-4xl font-black leading-none text-white">
+        <div className="px-8 text-center font-display text-4xl font-black leading-none" style={{ color: preview.foreground || '#ffffff', textShadow: '0 2px 12px rgba(0,0,0,0.15)' }}>
           {preview.label}
         </div>
       )}
 
       {preview.layout === 'chat' && (
         <div className="flex w-[76%] flex-col gap-3">
-          <div className="mr-auto max-w-[78%] rounded-md bg-white px-4 py-3 text-sm font-black text-slate-900 shadow-lg">
+          <div className="mr-auto max-w-[78%] rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm font-black text-slate-900 shadow-lg shadow-black/10">
             {preview.label}
           </div>
-          <div className="ml-auto h-10 w-[58%] rounded-md" style={{ backgroundColor: preview.accent }} />
+          <div className="ml-auto h-10 w-[58%] rounded-2xl rounded-tr-md shadow-md" style={{ backgroundColor: preview.accent }} />
         </div>
       )}
 
       {preview.layout === 'poster' && (
-        <div className="grid h-[72%] w-[72%] grid-cols-[0.9fr_1.1fr] overflow-hidden rounded-md bg-slate-950 shadow-xl">
-          <div className="opacity-80" style={{ backgroundColor: preview.accent }} />
+        <div className="grid h-[72%] w-[72%] grid-cols-[0.9fr_1.1fr] overflow-hidden rounded-lg shadow-2xl shadow-black/20">
+          <div style={{ backgroundColor: preview.accent }} />
           <div className="flex items-center p-5 font-display text-2xl font-black leading-none" style={{ color: preview.foreground }}>
             {preview.label}
           </div>
@@ -121,8 +121,8 @@ const TemplatePreview: React.FC<{ template: MotionTemplate }> = ({ template }) =
 
       {preview.layout === 'loop' && (
         <div className="relative flex h-[70%] w-[70%] items-center justify-center">
-          <span className="absolute h-24 w-24 rotate-12 rounded-md bg-white shadow-xl" />
-          <span className="absolute h-24 w-24 -rotate-12 rounded-md opacity-90" style={{ backgroundColor: preview.accent }} />
+          <span className="absolute h-24 w-24 rotate-12 rounded-lg bg-white shadow-xl shadow-black/10" />
+          <span className="absolute h-24 w-24 -rotate-12 rounded-lg shadow-md" style={{ backgroundColor: preview.accent }} />
           <span className="relative font-display text-3xl font-black" style={{ color: preview.foreground }}>
             {preview.label}
           </span>
@@ -182,7 +182,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               type="button"
               onClick={() => setActiveTab('drafts')}
               className={`flex h-10 w-full items-center gap-3 px-7 text-left text-base font-bold transition ${
-                activeTab === 'drafts' ? 'bg-violet-100 text-slate-950' : 'text-slate-600 hover:bg-slate-50'
+                activeTab === 'drafts' ? 'bg-violet-100 text-violet-900' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
               <Folder size={18} className={activeTab === 'drafts' ? 'text-violet-600' : 'text-slate-400'} />
@@ -192,7 +192,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               type="button"
               onClick={() => setActiveTab('templates')}
               className={`flex h-10 w-full items-center gap-3 px-7 text-left text-base font-bold transition ${
-                activeTab === 'templates' ? 'bg-violet-100 text-slate-950' : 'text-slate-600 hover:bg-slate-50'
+                activeTab === 'templates' ? 'bg-violet-100 text-violet-900' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
               <FilePlus2 size={18} className={activeTab === 'templates' ? 'text-violet-600' : 'text-slate-400'} />
@@ -218,7 +218,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     type="button"
                     onClick={() => setActiveCategory(category.id)}
                     className={`flex h-10 w-full items-center gap-4 px-7 text-left text-base font-bold transition ${
-                      activeCategory === category.id ? 'bg-violet-100 text-slate-950' : 'text-slate-600 hover:bg-slate-50'
+                      activeCategory === category.id ? 'bg-violet-100 text-violet-900' : 'text-slate-600 hover:bg-slate-50'
                     }`}
                   >
                     <span className={activeCategory === category.id ? 'text-violet-600' : 'text-violet-500'}>
@@ -232,23 +232,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           )}
 
           {activeTab === 'drafts' && (
-            <div className="mt-12 space-y-5 text-sm font-bold text-slate-500">
-              <div className="border border-slate-200 p-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-xs font-black text-orange-600">
-                    SM
-                  </span>
-                  <span className="truncate font-black text-slate-900">Workspace</span>
+            <div className="mt-12 space-y-4 text-sm font-bold text-slate-500">
+              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-black text-white">
+                  SM
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-900">Workspace</p>
+                  <p className="text-[11px] font-medium text-slate-400">Personal</p>
                 </div>
               </div>
-              <button type="button" className="flex items-center gap-3 px-7 text-blue-500">
-                <Sparkles size={16} />
-                Upgrade your plan
-              </button>
-              <button type="button" className="flex items-center gap-3 px-7">
-                <UserPlus size={16} />
-                Invite members
-              </button>
             </div>
           )}
         </aside>
@@ -256,31 +249,31 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <main className="min-w-0">
           {activeTab === 'drafts' ? (
             <>
-              <h1 className="mb-14 font-display text-7xl font-black tracking-tight">Drafts</h1>
-              <div className="mb-10 grid grid-cols-3 gap-5">
+              <h1 className="mb-10 font-display text-5xl font-black tracking-tight text-slate-900">Drafts</h1>
+              <div className="mb-12 grid grid-cols-3 gap-4">
                 <button
                   type="button"
                   onClick={onCreateBlank}
-                  className="flex h-[60px] items-center justify-center gap-3 bg-violet-600 text-lg font-black text-white transition hover:bg-violet-700"
+                  className="group flex h-14 items-center justify-center gap-2.5 rounded-xl bg-slate-900 text-sm font-bold text-white transition-all hover:bg-violet-600 hover:shadow-lg hover:shadow-violet-500/20"
                 >
-                  <Plus size={22} />
+                  <Plus size={18} className="transition-transform group-hover:rotate-90" />
                   Create new file
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('templates')}
-                  className="flex h-[60px] items-center justify-center gap-3 bg-sky-500 text-lg font-black text-white transition hover:bg-sky-600"
+                  className="group flex h-14 items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-all hover:border-violet-300 hover:text-violet-700 hover:shadow-md"
                 >
-                  <Layers size={21} />
+                  <Layers size={18} className="text-slate-400 transition-colors group-hover:text-violet-500" />
                   Start from template
                 </button>
                 {onOpenProjectFile && (
                   <button
                     type="button"
                     onClick={onOpenProjectFile}
-                    className="flex h-[60px] items-center justify-center gap-3 border-2 border-slate-200 bg-white text-lg font-black text-slate-700 transition hover:border-violet-400 hover:text-violet-600"
+                    className="group flex h-14 items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-all hover:border-violet-300 hover:text-violet-700 hover:shadow-md"
                   >
-                    <FolderOpen size={21} />
+                    <FolderOpen size={18} className="text-slate-400 transition-colors group-hover:text-violet-500" />
                     Open file
                   </button>
                 )}
@@ -331,39 +324,39 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       onClick={() => projects.length > 0 ? onOpenProject(project) : onOpenDraft()}
                       className="block w-full text-left"
                     >
-                      <div className="flex aspect-[1.48] items-center justify-center rounded-md bg-slate-100 transition group-hover:bg-violet-50">
-                        <div className="rounded-md bg-white px-8 py-5 text-center shadow-lg">
-                          <div className="font-display text-3xl font-black text-slate-700">SocialMock</div>
-                          <div className="mt-2 text-sm font-bold text-slate-400">
+                      <div className="flex aspect-[1.48] items-center justify-center overflow-hidden rounded-xl border border-slate-200/60 bg-gradient-to-br from-slate-50 to-slate-100 transition-all group-hover:border-violet-300 group-hover:shadow-lg group-hover:shadow-violet-500/10">
+                        <div className="rounded-lg bg-white px-8 py-5 text-center shadow-md shadow-black/5">
+                          <div className="font-display text-2xl font-black text-slate-800">SocialMock</div>
+                          <div className="mt-1.5 text-xs font-bold text-slate-400">
                             {project.sourceTemplateId ? 'template draft' : 'motion draft'}
                           </div>
                         </div>
                       </div>
                     </button>
-                    <div className="mt-4 flex items-start justify-between gap-3">
+                    <div className="mt-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h2 className="truncate text-xl font-black">{project.title}</h2>
-                        <p className="text-sm font-bold text-slate-400">{formatEditedAt(project.updatedAt)}</p>
+                        <h2 className="truncate text-sm font-bold text-slate-900">{project.title}</h2>
+                        <p className="text-xs text-slate-400">{formatEditedAt(project.updatedAt)}</p>
                       </div>
                       {projects.length > 0 && (
                         <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
                           <button
                             type="button"
                             onClick={() => onDuplicateProject(project)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-950"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600"
                             title="Duplicate file"
                             aria-label={`Duplicate ${project.title}`}
                           >
-                            <CopyPlus size={14} />
+                            <CopyPlus size={13} />
                           </button>
                           <button
                             type="button"
                             onClick={() => onDeleteProject(project)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-400 transition hover:bg-rose-50 hover:text-rose-600"
                             title="Delete file"
                             aria-label={`Delete ${project.title}`}
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       )}
@@ -372,28 +365,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 ))}
 
                 <button type="button" onClick={() => setActiveTab('templates')} className="group text-left">
-                  <div className="flex aspect-[1.48] items-center justify-center rounded-md bg-slate-100 transition group-hover:bg-violet-50">
+                  <div className="flex aspect-[1.48] items-center justify-center overflow-hidden rounded-xl border border-slate-200/60 bg-gradient-to-br from-slate-50 to-slate-100 transition-all group-hover:border-violet-300 group-hover:shadow-lg group-hover:shadow-violet-500/10">
                     <div className="grid grid-cols-5 gap-2">
                       {motionTemplates.slice(0, 10).map(template => (
                         <span
                           key={template.id}
-                          className="h-10 w-14 rounded-sm"
+                          className="h-10 w-14 rounded-md"
                           style={{ background: template.preview.background }}
                         />
                       ))}
                     </div>
                   </div>
-                  <h2 className="mt-4 text-xl font-black">Getting Started Templates</h2>
-                  <p className="text-sm font-bold text-slate-400">Pick a template and customize it</p>
+                  <h2 className="mt-3 text-sm font-bold text-slate-900">Getting Started Templates</h2>
+                  <p className="text-xs text-slate-400">Pick a template and customize it</p>
                 </button>
 
                 <button
                   type="button"
                   onClick={onCreateBlank}
-                  className="flex aspect-[1.48] items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-violet-600 transition hover:border-violet-400 hover:bg-violet-50"
+                  className="flex aspect-[1.48] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-white/50 text-slate-300 transition-all hover:border-violet-400 hover:bg-violet-50/50 hover:text-violet-500"
                   aria-label="Create new draft"
                 >
-                  <Plus size={36} />
+                  <Plus size={32} />
                 </button>
               </div>
             </>

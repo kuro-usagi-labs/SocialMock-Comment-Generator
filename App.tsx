@@ -199,6 +199,16 @@ const App: React.FC = () => {
   useEffect(() => {
     currentFilePathRef.current = currentFilePath;
   }, [currentFilePath]);
+
+  // Toggle body class to control scrolling (dashboard = scrollable, editor = locked)
+  useEffect(() => {
+    if (workspaceView === 'editor') {
+      document.body.classList.add('editor-active');
+    } else {
+      document.body.classList.remove('editor-active');
+    }
+    return () => document.body.classList.remove('editor-active');
+  }, [workspaceView]);
   
   const waitForPreviewPaint = () => new Promise<void>(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -1422,41 +1432,40 @@ const App: React.FC = () => {
 
       <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         
-        <header className="flex min-h-[64px] flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-3 shadow-sm md:px-4">
+        <header className="flex h-12 min-h-[48px] flex-shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-3 md:px-4">
           <div className="flex min-w-[180px] items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[19px]">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[16px]">
               <span className={currentPlatform.color}>{currentPlatform.icon}</span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-display text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">SocialMock Studio</p>
-              <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                <h1 className="font-display truncate text-base font-black tracking-tight text-slate-900">{currentPlatform.label}</h1>
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="font-display truncate text-sm font-black tracking-tight text-white">{currentPlatform.label}</h1>
                 <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 sm:block" />
-                <span className="hidden shrink-0 text-sm font-medium text-slate-500 sm:block">{config.width}px output</span>
+                <span className="hidden shrink-0 text-xs font-medium text-slate-300 sm:block">{config.width}px</span>
               </div>
             </div>
           </div>
 
           <div className="order-3 flex w-full justify-center lg:order-none lg:w-auto">
-            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+            <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-0.5">
               <button
                 type="button"
                 onClick={() => setActiveTab('canvas')}
-                className={`flex h-9 items-center gap-2 rounded-md px-3 text-sm font-bold transition-all ${
-                  activeTab === 'canvas' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-bold transition-all ${
+                  activeTab === 'canvas' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <ImageIcon size={16} />
+                <ImageIcon size={14} />
                 <span className="hidden sm:inline">Design</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('animation')}
-                className={`flex h-9 items-center gap-2 rounded-md px-3 text-sm font-bold transition-all ${
-                  activeTab === 'animation' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'
+                className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-bold transition-all ${
+                  activeTab === 'animation' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <Video size={16} />
+                <Video size={14} />
                 <span className="hidden sm:inline">Animate</span>
               </button>
             </div>
@@ -1464,46 +1473,46 @@ const App: React.FC = () => {
 
           <div className="ml-auto flex items-center gap-2">
 
-            <div className="hidden h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 md:flex">
+            <div className="hidden items-center gap-1 rounded-lg bg-slate-800 p-0.5 md:flex">
               <button
                 type="button"
                 onClick={undo}
                 disabled={!canUndo}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                 title={nextUndoLabel ? `Undo ${nextUndoLabel}` : 'Undo'}
                 aria-label="Undo"
               >
-                <Undo2 size={16} />
+                <Undo2 size={14} />
               </button>
               <button
                 type="button"
                 onClick={redo}
                 disabled={!canRedo}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                 title={nextRedoLabel ? `Redo ${nextRedoLabel}` : 'Redo'}
                 aria-label="Redo"
               >
-                <Redo2 size={16} />
+                <Redo2 size={14} />
               </button>
             </div>
 
-            <div className="hidden h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 md:flex">
+            <div className="hidden items-center gap-1 rounded-lg bg-slate-800 p-0.5 md:flex">
               <button
                 type="button"
                 onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white"
               >
-                <Minus size={16} />
+                <Minus size={14} />
               </button>
-              <span className="font-display min-w-[3rem] px-1 text-center text-sm font-black text-slate-700">
+              <span className="font-display min-w-[3rem] px-1 text-center text-xs font-black text-slate-300">
                 {(zoom * 100).toFixed(0)}%
               </span>
               <button
                 type="button"
                 onClick={() => setZoom(z => Math.min(2, z + 0.1))}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white"
               >
-                <Plus size={16} />
+                <Plus size={14} />
               </button>
             </div>
 
@@ -1511,9 +1520,9 @@ const App: React.FC = () => {
               type="button"
               onClick={handleCopy}
               disabled={isCopying}
-              className="glass-button hidden h-10 min-w-0 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold text-slate-700 disabled:opacity-60 md:flex"
+              className="hidden h-7 min-w-0 shrink-0 items-center justify-center gap-1.5 rounded-md bg-slate-800 px-2.5 text-xs font-bold text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:opacity-60 md:flex"
             >
-              {isCopying ? <Loader2 size={16} className="animate-spin shrink-0" /> : <Copy size={16} className="shrink-0" />}
+              {isCopying ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Copy size={12} className="shrink-0" />}
               <span className="truncate">{isCopying ? 'Copying' : 'Copy'}</span>
             </button>
 
@@ -1522,9 +1531,9 @@ const App: React.FC = () => {
                 type="button"
                 onClick={handleBulkExport}
                 disabled={isExportingBulk}
-                className="hidden h-10 min-w-0 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 xl:flex"
+                className="hidden h-7 min-w-0 shrink-0 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2.5 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-60 xl:flex"
               >
-                {isExportingBulk ? <Loader2 size={16} className="animate-spin shrink-0" /> : <PackageCheck size={16} className="shrink-0" />}
+                {isExportingBulk ? <Loader2 size={12} className="animate-spin shrink-0" /> : <PackageCheck size={12} className="shrink-0" />}
                 <span className="truncate">Bulk</span>
               </button>
             )}
@@ -1532,20 +1541,20 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={handleReset}
-              className="glass-button hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 sm:flex"
+              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white sm:flex"
               title="Reset"
             >
-              <RotateCcw size={16} />
+              <RotateCcw size={14} />
             </button>
 
             <button
               type="button"
               onClick={handleExport}
               disabled={isExporting}
-              className="flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-bold text-white shadow-md transition hover:-translate-y-1 hover:bg-indigo-600 disabled:opacity-60 sm:w-auto sm:px-4"
+              className="flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-bold text-white shadow-md transition hover:bg-violet-500 disabled:opacity-60"
             >
-              {isExporting ? <Loader2 size={16} className="animate-spin shrink-0" /> : <Download size={16} className="shrink-0" />}
-              <span className="hidden truncate sm:inline">{isExporting ? 'Exporting' : 'Export PNG'}</span>
+              {isExporting ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Download size={12} className="shrink-0" />}
+              <span className="truncate">{isExporting ? 'Exporting...' : 'Export'}</span>
             </button>
           </div>
         </header>
